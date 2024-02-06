@@ -7,14 +7,20 @@ edition = "2021"
 
 [dependencies]
 base64 = "0.21.2"
-bitcoin = { version = "0.30.1", features = ["serde"] }
-hex = "0.4.3"
+bitcoin = { version = "0.31.1", features = ["serde"] }
+hex = { version = "0.4.3", features = ["serde"] }
+hex-conservative = "0.1.1"
 http = "0.2.9"
-jsonrpsee = { version = "0.19.0", features = ["client", "macros"] }
+jsonrpsee = { version = "0.20.0", features = ["client", "macros"] }
 serde = { version = "1.0.183", features = ["derive"] }
 serde_json = "1.0.104"
+serde_with = {version = "3.8.1", default-features = false, features = ["macros"]}
 thiserror = "1.0.44"
 tokio = { version = "1.35.1", default-features = false, features = ["time"]}
+tracing = { version = "0.1.40", optional = true }
+
+[dev-dependencies]
+serde_path_to_error = "0.1.16"
 
 [features]
-tracing = ["jsonrpsee/tracing"]
+tracing = ["jsonrpsee/tracing", "dep:tracing"]

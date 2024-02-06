@@ -1,15 +1,21 @@
-mod client;
+use std::{collections::HashMap, net::SocketAddr};
+
 use base64::Engine as _;
-use bitcoin::consensus::{Decodable, Encodable};
+use bitcoin::{
+    consensus::{Decodable, Encodable},
+    Amount,
+};
 use jsonrpsee::http_client::{HeaderMap, HttpClient, HttpClientBuilder};
-use std::collections::HashMap;
-use std::net::SocketAddr;
 
 pub use bitcoin;
 pub use client::MainClient;
 pub use jsonrpsee;
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub mod client;
+
+pub use client::Header;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum WithdrawalBundleStatus {
     Failed,
     Confirmed,
@@ -62,6 +68,10 @@ impl Drivechain {
         Ok(self.client.getbestblockhash().await?)
     }
 
+    pub async fn get_header(&self, block_hash: bitcoin::BlockHash) -> Result<Header, Error> {
+        Ok(self.client.getblockheader(block_hash).await?)
+    }
+
     pub async fn get_two_way_peg_data(
         &self,
         end: bitcoin::BlockHash,
@@ -106,7 +116,7 @@ impl Drivechain {
             .listsidechaindepositsbyblock(self.sidechain_number, Some(end), start)
             .await?;
         let mut last_block_hash = None;
-        let mut last_total = 0;
+        let mut last_total = Amount::ZERO;
         let mut outputs = HashMap::new();
         for deposit in &deposits {
             let transaction = hex::decode(&deposit.txhex)?;
@@ -115,12 +125,22 @@ impl Drivechain {
             if let Some(start) = start {
                 if deposit.hashblock == start {
                     last_total = transaction.output[deposit.nburnindex].value;
+                    #[cfg(feature = "tracing")]
+                    if tracing::enabled!(tracing::Level::DEBUG) {
+                        let txid = transaction.txid();
+                        tracing::debug!("ignoring tx {txid}");
+                    }
                     continue;
                 }
             }
             let total = transaction.output[deposit.nburnindex].value;
             if total < last_total {
                 last_total = total;
+                #[cfg(feature = "tracing")]
+                if tracing::enabled!(tracing::Level::DEBUG) {
+                    let txid = transaction.txid();
+                    tracing::debug!("ignoring tx {txid}");
+                }
                 continue;
             }
             let value = total - last_total;
@@ -132,7 +152,7 @@ impl Drivechain {
             last_block_hash = Some(deposit.hashblock);
             let output = Output {
                 address: deposit.strdest.clone(),
-                value,
+                value: value.to_sat(),
             };
             outputs.insert(outpoint, output);
         }
@@ -187,7 +207,7 @@ pub enum Error {
     #[error("bitcoin consensus encode error")]
     BitcoinConsensusEncode(#[from] bitcoin::consensus::encode::Error),
     #[error("bitcoin hex error")]
-    BitcoinHex(#[from] bitcoin::hashes::hex::Error),
+    BitcoinHex(#[from] hex_conservative::HexToArrayError),
     #[error("hex error")]
     Hex(#[from] hex::FromHexError),
     #[error("no next block for prev_main_hash = {prev_main_hash}")]
@@ -195,3 +215,6 @@ pub enum Error {
     #[error("io error")]
     Io(#[from] std::io::Error),
 }
+
+#[cfg(test)]
+mod tests;

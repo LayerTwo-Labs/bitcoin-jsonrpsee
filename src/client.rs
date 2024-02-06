@@ -1,28 +1,96 @@
-use bitcoin::amount::serde::SerdeAmount;
-use jsonrpsee::proc_macros::rpc;
 use std::ops::{Deref, DerefMut};
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+use bitcoin::{
+    amount::serde::SerdeAmount,
+    hashes::{ripemd160::Hash as Ripemd160Hash, sha256::Hash as Sha256Hash, Hash},
+    BlockHash,
+};
+use jsonrpsee::proc_macros::rpc;
+use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DeserializeFromStr, FromInto};
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct WithdrawalStatus {
     hash: bitcoin::Txid,
     nblocksleft: usize,
     nworkscore: usize,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SpentWithdrawal {
     pub nsidechain: u8,
     pub hash: bitcoin::Txid,
     pub hashblock: bitcoin::BlockHash,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct FailedWithdrawal {
     pub nsidechain: u8,
     pub hash: bitcoin::Txid,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(DeserializeFromStr)]
+#[repr(transparent)]
+struct CompactTargetRepr(bitcoin::CompactTarget);
+
+impl std::str::FromStr for CompactTargetRepr {
+    type Err = bitcoin::error::ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use bitcoin::string::FromHexStr;
+        bitcoin::CompactTarget::from_hex_str_no_prefix(s).map(Self)
+    }
+}
+
+impl Serialize for CompactTargetRepr {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        hex::serde::serialize(self.0.to_consensus().to_be_bytes(), serializer)
+    }
+}
+
+impl From<CompactTargetRepr> for bitcoin::CompactTarget {
+    fn from(repr: CompactTargetRepr) -> Self {
+        repr.0
+    }
+}
+
+impl From<bitcoin::CompactTarget> for CompactTargetRepr {
+    fn from(target: bitcoin::CompactTarget) -> Self {
+        Self(target)
+    }
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Header {
+    pub hash: BlockHash,
+    pub version: bitcoin::block::Version,
+    #[serde(rename = "previousblockhash", default = "BlockHash::all_zeros")]
+    pub prev_blockhash: BlockHash,
+    #[serde(rename = "merkleroot")]
+    pub merkle_root: bitcoin::TxMerkleNode,
+    pub time: u32,
+    #[serde_as(as = "FromInto<CompactTargetRepr>")]
+    pub bits: bitcoin::CompactTarget,
+    pub nonce: u32,
+}
+
+impl Header {
+    /// Computes the target (range [0, T] inclusive) that a blockhash must land in to be valid.
+    pub fn target(&self) -> bitcoin::Target {
+        self.bits.into()
+    }
+
+    /// Returns the total work of the block.
+    pub fn work(&self) -> bitcoin::Work {
+        self.target().to_work()
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Vote {
     Upvote,
@@ -30,7 +98,7 @@ pub enum Vote {
     Downvote,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Block {
     pub hash: bitcoin::BlockHash,
@@ -53,7 +121,13 @@ pub struct Block {
     pub nextblockhash: Option<bitcoin::BlockHash>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Deserialize)]
+pub struct BlockchainInfo {
+    #[serde(with = "bitcoin::network::as_core_arg")]
+    pub chain: bitcoin::Network,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Deposit {
     pub hashblock: bitcoin::BlockHash,
@@ -61,6 +135,44 @@ pub struct Deposit {
     pub ntx: usize,
     pub strdest: String,
     pub txhex: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SidechainInfo {
+    #[serde(rename = "title")]
+    pub name: String,
+    #[serde(alias = "nversion")]
+    pub version: i32,
+    pub description: String,
+    #[serde(alias = "hashid1", alias = "hashID1")]
+    pub hash_id_1: Sha256Hash,
+    #[serde(alias = "hashid2", alias = "hashID2")]
+    pub hash_id_2: Ripemd160Hash,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct SidechainId(pub u8);
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SidechainProposal {
+    #[serde(rename = "nSidechain")]
+    pub sidechain_id: SidechainId,
+    #[serde(flatten)]
+    pub info: SidechainInfo,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SidechainActivationStatus {
+    #[serde(rename = "title")]
+    pub name: String,
+    pub description: String,
+    #[serde(alias = "nage")]
+    pub age: u32,
+    // TODO: this needs a better name
+    #[serde(alias = "nfail")]
+    pub fail: u32,
 }
 
 #[rpc(client)]
@@ -79,6 +191,11 @@ pub trait Main {
     async fn listfailedwithdrawals(&self) -> Result<Vec<FailedWithdrawal>, jsonrpsee::core::Error>;
     #[method(name = "getblockcount")]
     async fn getblockcount(&self) -> Result<usize, jsonrpsee::core::Error>;
+    #[method(name = "getblockheader")]
+    async fn getblockheader(
+        &self,
+        block_hash: bitcoin::BlockHash,
+    ) -> Result<Header, jsonrpsee::core::Error>;
     #[method(name = "getbestblockhash")]
     async fn getbestblockhash(&self) -> Result<bitcoin::BlockHash, jsonrpsee::core::Error>;
     #[method(name = "getblock")]
@@ -87,6 +204,8 @@ pub trait Main {
         blockhash: &bitcoin::BlockHash,
         verbosity: Option<usize>,
     ) -> Result<Block, jsonrpsee::core::Error>;
+    #[method(name = "getblockchaininfo")]
+    async fn get_blockchain_info(&self) -> Result<BlockchainInfo, jsonrpsee::core::Error>;
     #[method(name = "createbmmcriticaldatatx")]
     async fn createbmmcriticaldatatx(
         &self,
@@ -123,12 +242,23 @@ pub trait Main {
     #[method(name = "generate")]
     async fn generate(&self, num: u32) -> Result<serde_json::Value, jsonrpsee::core::Error>;
 
+    #[method(name = "generatetoaddress")]
+    async fn generate_to_address(
+        &self,
+        n_blocks: u32,
+        address: &bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+    ) -> Result<Vec<BlockHash>, jsonrpsee::core::Error>;
+
     #[method(name = "getnewaddress")]
     async fn getnewaddress(
         &self,
         account: &str,
         address_type: &str,
     ) -> Result<bitcoin::Address<bitcoin::address::NetworkUnchecked>, jsonrpsee::core::Error>;
+
+    #[method(name = "countsidechaindeposits")]
+    async fn count_sidechain_deposits(&self, nsidechain: u8)
+        -> Result<u32, jsonrpsee::core::Error>;
 
     #[method(name = "createsidechaindeposit")]
     async fn createsidechaindeposit(
@@ -138,6 +268,27 @@ pub trait Main {
         amount: AmountBtc,
         fee: AmountBtc,
     ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
+
+    #[method(name = "createsidechainproposal")]
+    async fn create_sidechain_proposal(
+        &self,
+        nsidechain: u8,
+        sidechain_name: &str,
+        sidechain_description: &str,
+    ) -> Result<SidechainProposal, jsonrpsee::core::Error>;
+
+    #[method(name = "listactivesidechains")]
+    async fn list_active_sidechains(
+        &self,
+    ) -> Result<Vec<serde_json::Value>, jsonrpsee::core::Error>;
+
+    #[method(name = "listsidechainproposals")]
+    async fn list_sidechain_proposals(&self) -> Result<Vec<SidechainInfo>, jsonrpsee::core::Error>;
+
+    #[method(name = "listsidechainactivationstatus")]
+    async fn list_sidechain_activation_status(
+        &self,
+    ) -> Result<Vec<SidechainActivationStatus>, jsonrpsee::core::Error>;
 }
 
 // Arguments:
@@ -179,7 +330,7 @@ impl DerefMut for AmountBtc {
     }
 }
 
-impl<'de> serde::Deserialize<'de> for AmountBtc {
+impl<'de> Deserialize<'de> for AmountBtc {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -188,7 +339,7 @@ impl<'de> serde::Deserialize<'de> for AmountBtc {
     }
 }
 
-impl serde::Serialize for AmountBtc {
+impl Serialize for AmountBtc {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
