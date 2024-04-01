@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr};
+use std::net::SocketAddr;
 
 use base64::Engine as _;
 use bitcoin::{
@@ -23,9 +23,9 @@ pub enum WithdrawalBundleStatus {
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TwoWayPegData {
-    pub deposits: HashMap<bitcoin::OutPoint, Output>,
+    pub deposits: Vec<(bitcoin::OutPoint, Output)>,
     pub deposit_block_hash: Option<bitcoin::BlockHash>,
-    pub bundle_statuses: HashMap<bitcoin::Txid, WithdrawalBundleStatus>,
+    pub bundle_statuses: Vec<(bitcoin::Txid, WithdrawalBundleStatus)>,
 }
 
 #[derive(Clone)]
@@ -104,20 +104,14 @@ impl Drivechain {
         &self,
         end: bitcoin::BlockHash,
         start: Option<bitcoin::BlockHash>,
-    ) -> Result<
-        (
-            HashMap<bitcoin::OutPoint, Output>,
-            Option<bitcoin::BlockHash>,
-        ),
-        Error,
-    > {
+    ) -> Result<(Vec<(bitcoin::OutPoint, Output)>, Option<bitcoin::BlockHash>), Error> {
         let deposits = self
             .client
             .listsidechaindepositsbyblock(self.sidechain_number, Some(end), start)
             .await?;
         let mut last_block_hash = None;
         let mut last_total = Amount::ZERO;
-        let mut outputs = HashMap::new();
+        let mut outputs = Vec::new();
         for deposit in &deposits {
             let transaction = hex::decode(&deposit.txhex)?;
             let transaction =
@@ -154,22 +148,22 @@ impl Drivechain {
                 address: deposit.strdest.clone(),
                 value: value.to_sat(),
             };
-            outputs.insert(outpoint, output);
+            outputs.push((outpoint, output));
         }
         Ok((outputs, last_block_hash))
     }
 
     async fn get_withdrawal_bundle_statuses(
         &self,
-    ) -> Result<HashMap<bitcoin::Txid, WithdrawalBundleStatus>, Error> {
-        let mut statuses = HashMap::new();
+    ) -> Result<Vec<(bitcoin::Txid, WithdrawalBundleStatus)>, Error> {
+        let mut statuses = Vec::new();
         for spent in &self.client.listspentwithdrawals().await? {
             if spent.nsidechain == self.sidechain_number {
-                statuses.insert(spent.hash, WithdrawalBundleStatus::Confirmed);
+                statuses.push((spent.hash, WithdrawalBundleStatus::Confirmed));
             }
         }
         for failed in &self.client.listfailedwithdrawals().await? {
-            statuses.insert(failed.hash, WithdrawalBundleStatus::Failed);
+            statuses.push((failed.hash, WithdrawalBundleStatus::Failed));
         }
         Ok(statuses)
     }
