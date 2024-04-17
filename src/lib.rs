@@ -3,9 +3,10 @@ use std::net::SocketAddr;
 use base64::Engine as _;
 use bitcoin::{
     consensus::{Decodable, Encodable},
-    Amount,
+    Amount, BlockHash,
 };
 use jsonrpsee::http_client::{HeaderMap, HttpClient, HttpClientBuilder};
+use serde::{Deserialize, Serialize};
 
 pub use bitcoin;
 pub use client::MainClient;
@@ -21,9 +22,19 @@ pub enum WithdrawalBundleStatus {
     Confirmed,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DepositInfo {
+    /// Hash of the block in which this deposit was included
+    pub block_hash: BlockHash,
+    /// Position of this transaction within the block that included it
+    pub tx_index: usize,
+    pub outpoint: bitcoin::OutPoint,
+    pub output: Output,
+}
+
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TwoWayPegData {
-    pub deposits: Vec<(bitcoin::OutPoint, Output)>,
+    pub deposits: Vec<DepositInfo>,
     pub deposit_block_hash: Option<bitcoin::BlockHash>,
     pub bundle_statuses: Vec<(bitcoin::Txid, WithdrawalBundleStatus)>,
 }
@@ -34,7 +45,7 @@ pub struct Drivechain {
     pub client: HttpClient,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Output {
     pub address: String,
     pub value: u64,
@@ -72,46 +83,21 @@ impl Drivechain {
         Ok(self.client.getblockheader(block_hash).await?)
     }
 
-    pub async fn get_two_way_peg_data(
-        &self,
-        end: bitcoin::BlockHash,
-        start: Option<bitcoin::BlockHash>,
-    ) -> Result<TwoWayPegData, Error> {
-        let (deposits, deposit_block_hash) = self.get_deposit_outputs(end, start).await?;
-        let bundle_statuses = self.get_withdrawal_bundle_statuses().await?;
-        let two_way_peg_data = TwoWayPegData {
-            deposits,
-            deposit_block_hash,
-            bundle_statuses,
-        };
-        Ok(two_way_peg_data)
-    }
-
-    pub async fn broadcast_withdrawal_bundle(
-        &self,
-        transaction: bitcoin::Transaction,
-    ) -> Result<(), Error> {
-        let mut rawtx = vec![];
-        transaction.consensus_encode(&mut rawtx)?;
-        let rawtx = hex::encode(&rawtx);
-        self.client
-            .receivewithdrawalbundle(self.sidechain_number, &rawtx)
-            .await?;
-        Ok(())
-    }
-
+    /// Returns a [`DepositInfo`] for each deposit output in the specified
+    /// interval, and the hash of the last deposit block in the specified
+    /// interval.
     async fn get_deposit_outputs(
         &self,
         end: bitcoin::BlockHash,
         start: Option<bitcoin::BlockHash>,
-    ) -> Result<(Vec<(bitcoin::OutPoint, Output)>, Option<bitcoin::BlockHash>), Error> {
+    ) -> Result<(Vec<DepositInfo>, Option<bitcoin::BlockHash>), Error> {
         let deposits = self
             .client
             .listsidechaindepositsbyblock(self.sidechain_number, Some(end), start)
             .await?;
         let mut last_block_hash = None;
         let mut last_total = Amount::ZERO;
-        let mut outputs = Vec::new();
+        let mut deposit_infos = Vec::new();
         for deposit in &deposits {
             let transaction = hex::decode(&deposit.txhex)?;
             let transaction =
@@ -148,9 +134,15 @@ impl Drivechain {
                 address: deposit.strdest.clone(),
                 value: value.to_sat(),
             };
-            outputs.push((outpoint, output));
+            let deposit_info = DepositInfo {
+                block_hash: deposit.hashblock,
+                tx_index: deposit.ntx,
+                outpoint,
+                output,
+            };
+            deposit_infos.push(deposit_info);
         }
-        Ok((outputs, last_block_hash))
+        Ok((deposit_infos, last_block_hash))
     }
 
     async fn get_withdrawal_bundle_statuses(
@@ -166,6 +158,34 @@ impl Drivechain {
             statuses.push((failed.hash, WithdrawalBundleStatus::Failed));
         }
         Ok(statuses)
+    }
+
+    pub async fn get_two_way_peg_data(
+        &self,
+        end: bitcoin::BlockHash,
+        start: Option<bitcoin::BlockHash>,
+    ) -> Result<TwoWayPegData, Error> {
+        let (deposits, deposit_block_hash) = self.get_deposit_outputs(end, start).await?;
+        let bundle_statuses = self.get_withdrawal_bundle_statuses().await?;
+        let two_way_peg_data = TwoWayPegData {
+            deposits,
+            deposit_block_hash,
+            bundle_statuses,
+        };
+        Ok(two_way_peg_data)
+    }
+
+    pub async fn broadcast_withdrawal_bundle(
+        &self,
+        transaction: bitcoin::Transaction,
+    ) -> Result<(), Error> {
+        let mut rawtx = vec![];
+        transaction.consensus_encode(&mut rawtx)?;
+        let rawtx = hex::encode(&rawtx);
+        self.client
+            .receivewithdrawalbundle(self.sidechain_number, &rawtx)
+            .await?;
+        Ok(())
     }
 
     pub fn new(
