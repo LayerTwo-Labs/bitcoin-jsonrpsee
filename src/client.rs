@@ -201,7 +201,7 @@ pub trait Main {
     #[method(name = "getblock")]
     async fn getblock(
         &self,
-        blockhash: &bitcoin::BlockHash,
+        blockhash: bitcoin::BlockHash,
         verbosity: Option<usize>,
     ) -> Result<Block, jsonrpsee::core::Error>;
     #[method(name = "getblockchaininfo")]
@@ -218,8 +218,8 @@ pub trait Main {
     #[method(name = "verifybmm")]
     async fn verifybmm(
         &self,
-        blockhash: &bitcoin::BlockHash,
-        criticalhash: &bitcoin::BlockHash,
+        blockhash: bitcoin::BlockHash,
+        criticalhash: bitcoin::BlockHash,
         nsidechain: u8,
     ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
 
