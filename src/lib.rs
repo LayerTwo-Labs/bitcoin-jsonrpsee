@@ -52,12 +52,37 @@ pub struct Output {
 }
 
 impl Drivechain {
+    // Verify BMM against the specified mainchain block.
     pub async fn verify_bmm(
         &self,
-        prev_main_hash: &bitcoin::BlockHash,
-        bmm_bytes: &bitcoin::BlockHash,
+        main_hash: bitcoin::BlockHash,
+        bmm_bytes: bitcoin::BlockHash,
+    ) -> Result<bool, Error> {
+        use jsonrpsee::types::error::ErrorCode as JsonrpseeErrorCode;
+        match self
+            .client
+            .verifybmm(main_hash, bmm_bytes, self.sidechain_number)
+            .await
+        {
+            Ok(_) => Ok(true),
+            Err(jsonrpsee::core::Error::Call(err))
+                if JsonrpseeErrorCode::from(err.code()) == JsonrpseeErrorCode::ServerError(-1)
+                    && err.message() == "h* not found in block" =>
+            {
+                Ok(false)
+            }
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    // Verify BMM for the next block, polling until the next block is available
+    // Returns the verification result and mainchain block hash
+    pub async fn verify_bmm_next_block(
+        &self,
+        prev_main_hash: bitcoin::BlockHash,
+        bmm_bytes: bitcoin::BlockHash,
         poll_interval: std::time::Duration,
-    ) -> Result<(), Error> {
+    ) -> Result<(bool, bitcoin::BlockHash), Error> {
         let main_hash = loop {
             if let Some(next_block_hash) = self
                 .client
@@ -69,10 +94,8 @@ impl Drivechain {
             }
             tokio::time::sleep(poll_interval).await;
         };
-        self.client
-            .verifybmm(&main_hash, bmm_bytes, self.sidechain_number)
-            .await?;
-        Ok(())
+        let res = self.verify_bmm(main_hash, bmm_bytes).await?;
+        Ok((res, main_hash))
     }
 
     pub async fn get_mainchain_tip(&self) -> Result<bitcoin::BlockHash, Error> {
