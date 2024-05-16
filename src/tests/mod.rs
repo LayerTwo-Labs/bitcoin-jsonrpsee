@@ -5,6 +5,18 @@ use jsonrpsee::{
     types::{response, Response},
 };
 
+#[test]
+
+// Test deserializing a result from `getblockcommitments`
+fn test_deserialize_getblockcommitments() {
+    let json_str = include_str!("json/getblockcommitments.json");
+    let mut json_des = serde_json::Deserializer::from_str(json_str);
+    let res: Response<client::BlockCommitments> = serde_path_to_error::deserialize(&mut json_des)
+        .expect("Failed to deserialize block header");
+    let res: RpcResult<response::Success<_>> = res.try_into();
+    assert!(res.is_ok())
+}
+
 // Test deserializing a result from `getblockheader`
 #[test]
 fn test_deserialize_getblockheader() {

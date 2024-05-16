@@ -5,6 +5,7 @@ use bitcoin::{
     consensus::{Decodable, Encodable},
     Amount, BlockHash,
 };
+use client::BlockCommitment;
 use jsonrpsee::http_client::{HeaderMap, HttpClient, HttpClientBuilder};
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +16,7 @@ pub use jsonrpsee;
 pub mod client;
 
 pub use client::Header;
+use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum WithdrawalBundleStatus {
@@ -50,6 +52,10 @@ pub struct Output {
     pub address: String,
     pub value: u64,
 }
+
+#[derive(Copy, Clone, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
+#[error("Block not found: {0}")]
+pub struct BlockNotFoundError(pub bitcoin::BlockHash);
 
 impl Drivechain {
     // Verify BMM against the specified mainchain block.
@@ -100,6 +106,24 @@ impl Drivechain {
 
     pub async fn get_mainchain_tip(&self) -> Result<bitcoin::BlockHash, Error> {
         Ok(self.client.getbestblockhash().await?)
+    }
+
+    /// Returns a vector of pairs of txout indexes and block commitments
+    pub async fn get_block_commitments(
+        &self,
+        main_hash: bitcoin::BlockHash,
+    ) -> Result<Result<Vec<(u32, BlockCommitment)>, BlockNotFoundError>, Error> {
+        use jsonrpsee::types::error::ErrorCode as JsonrpseeErrorCode;
+        match self.client.get_block_commitments(main_hash).await {
+            Ok(commitments) => Ok(Ok(commitments.0)),
+            Err(jsonrpsee::core::Error::Call(err))
+                if JsonrpseeErrorCode::from(err.code()) == JsonrpseeErrorCode::ServerError(-1)
+                    && err.message() == "Block not found" =>
+            {
+                Ok(Err(BlockNotFoundError(main_hash)))
+            }
+            Err(err) => Err(err.into()),
+        }
     }
 
     pub async fn get_header(&self, block_hash: bitcoin::BlockHash) -> Result<Header, Error> {
