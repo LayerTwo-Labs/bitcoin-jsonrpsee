@@ -7,7 +7,7 @@ use bitcoin::{
 };
 use jsonrpsee::proc_macros::rpc;
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DeserializeFromStr, FromInto};
+use serde_with::{serde_as, DeserializeAs, DeserializeFromStr, FromInto};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct WithdrawalStatus {
@@ -121,6 +121,61 @@ pub struct Block {
     pub nextblockhash: Option<bitcoin::BlockHash>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct SidechainId(pub u8);
+
+/// Array item returned by `getblockcommitments`
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(tag = "type")]
+pub enum BlockCommitment {
+    #[serde(rename = "SCDB update bytes")]
+    ScdbUpdateBytes {
+        // TODO: parse script?
+        script: String,
+    },
+    #[serde(rename = "BMM h*")]
+    BmmHStar {
+        #[serde(rename = "h", deserialize_with = "hex::serde::deserialize")]
+        commitment: [u8; 32],
+        #[serde(rename = "nsidechain")]
+        sidechain_id: SidechainId,
+        #[serde(rename = "prevbytes", deserialize_with = "hex::serde::deserialize")]
+        prev_bytes: [u8; 4],
+    },
+    #[serde(rename = "Witness commitment")]
+    WitnessCommitment {
+        // TODO: parse script?
+        script: String,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct BlockCommitments(pub Vec<(u32, BlockCommitment)>);
+
+impl<'de> Deserialize<'de> for BlockCommitments {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Debug, Deserialize)]
+        struct Repr {
+            txout: u32,
+            #[serde(flatten)]
+            commitment: BlockCommitment,
+        }
+
+        impl From<Repr> for (u32, BlockCommitment) {
+            fn from(repr: Repr) -> Self {
+                (repr.txout, repr.commitment)
+            }
+        }
+
+        Vec::<FromInto<Repr>>::deserialize_as(deserializer).map(Self)
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct BlockchainInfo {
     #[serde(with = "bitcoin::network::as_core_arg")]
@@ -149,11 +204,6 @@ pub struct SidechainInfo {
     #[serde(alias = "hashid2", alias = "hashID2")]
     pub hash_id_2: Ripemd160Hash,
 }
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[repr(transparent)]
-#[serde(transparent)]
-pub struct SidechainId(pub u8);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SidechainProposal {
@@ -204,6 +254,13 @@ pub trait Main {
         blockhash: bitcoin::BlockHash,
         verbosity: Option<usize>,
     ) -> Result<Block, jsonrpsee::core::Error>;
+
+    #[method(name = "getblockcommitments")]
+    async fn get_block_commitments(
+        &self,
+        blockhash: bitcoin::BlockHash,
+    ) -> Result<BlockCommitments, jsonrpsee::core::Error>;
+
     #[method(name = "getblockchaininfo")]
     async fn get_blockchain_info(&self) -> Result<BlockchainInfo, jsonrpsee::core::Error>;
     #[method(name = "createbmmcriticaldatatx")]
