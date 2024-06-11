@@ -45,6 +45,7 @@ pub struct TwoWayPegData {
 pub struct Drivechain {
     pub sidechain_number: u8,
     pub client: HttpClient,
+    pub main_addr: SocketAddr,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -77,7 +78,10 @@ impl Drivechain {
             {
                 Ok(false)
             }
-            Err(err) => Err(err.into()),
+            Err(source) => Err(Error::Jsonrpsee {
+                source,
+                main_addr: self.main_addr,
+            }),
         }
     }
 
@@ -93,7 +97,11 @@ impl Drivechain {
             if let Some(next_block_hash) = self
                 .client
                 .getblock(prev_main_hash, None)
-                .await?
+                .await
+                .map_err(|source| Error::Jsonrpsee {
+                    source,
+                    main_addr: self.main_addr,
+                })?
                 .nextblockhash
             {
                 break next_block_hash;
@@ -105,7 +113,13 @@ impl Drivechain {
     }
 
     pub async fn get_mainchain_tip(&self) -> Result<bitcoin::BlockHash, Error> {
-        Ok(self.client.getbestblockhash().await?)
+        self.client
+            .getbestblockhash()
+            .await
+            .map_err(|source| Error::Jsonrpsee {
+                source,
+                main_addr: self.main_addr,
+            })
     }
 
     /// Returns a vector of pairs of txout indexes and block commitments
@@ -122,12 +136,21 @@ impl Drivechain {
             {
                 Ok(Err(BlockNotFoundError(main_hash)))
             }
-            Err(err) => Err(err.into()),
+            Err(source) => Err(Error::Jsonrpsee {
+                source,
+                main_addr: self.main_addr,
+            }),
         }
     }
 
     pub async fn get_header(&self, block_hash: bitcoin::BlockHash) -> Result<Header, Error> {
-        Ok(self.client.getblockheader(block_hash).await?)
+        self.client
+            .getblockheader(block_hash)
+            .await
+            .map_err(|source| Error::Jsonrpsee {
+                source,
+                main_addr: self.main_addr,
+            })
     }
 
     /// Returns a [`DepositInfo`] for each deposit output in the specified
@@ -141,7 +164,11 @@ impl Drivechain {
         let deposits = self
             .client
             .listsidechaindepositsbyblock(self.sidechain_number, Some(end), start)
-            .await?;
+            .await
+            .map_err(|source| Error::Jsonrpsee {
+                source,
+                main_addr: self.main_addr,
+            })?;
         let mut last_block_hash = None;
         let mut last_total = Amount::ZERO;
         let mut deposit_infos = Vec::new();
@@ -196,12 +223,29 @@ impl Drivechain {
         &self,
     ) -> Result<Vec<(bitcoin::Txid, WithdrawalBundleStatus)>, Error> {
         let mut statuses = Vec::new();
-        for spent in &self.client.listspentwithdrawals().await? {
+        let spent_withdrawals =
+            &self
+                .client
+                .listspentwithdrawals()
+                .await
+                .map_err(|source| Error::Jsonrpsee {
+                    source,
+                    main_addr: self.main_addr,
+                })?;
+        for spent in spent_withdrawals {
             if spent.nsidechain == self.sidechain_number {
                 statuses.push((spent.hash, WithdrawalBundleStatus::Confirmed));
             }
         }
-        for failed in &self.client.listfailedwithdrawals().await? {
+        let failed_withdrawals = &self
+            .client
+            .listfailedwithdrawals()
+            .await
+            .map_err(|source| Error::Jsonrpsee {
+                source,
+                main_addr: self.main_addr,
+            })?;
+        for failed in failed_withdrawals {
             statuses.push((failed.hash, WithdrawalBundleStatus::Failed));
         }
         Ok(statuses)
@@ -231,7 +275,11 @@ impl Drivechain {
         let rawtx = hex::encode(&rawtx);
         self.client
             .receivewithdrawalbundle(self.sidechain_number, &rawtx)
-            .await?;
+            .await
+            .map_err(|source| Error::Jsonrpsee {
+                source,
+                main_addr: self.main_addr,
+            })?;
         Ok(())
     }
 
@@ -251,18 +299,24 @@ impl Drivechain {
         headers.insert("authorization", header_value);
         let client = HttpClientBuilder::default()
             .set_headers(headers.clone())
-            .build(format!("http://{main_addr}"))?;
+            .build(format!("http://{main_addr}"))
+            .map_err(|source| Error::Jsonrpsee { source, main_addr })?;
         Ok(Drivechain {
             sidechain_number,
             client,
+            main_addr,
         })
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("jsonrpsee error")]
-    Jsonrpsee(#[from] jsonrpsee::core::Error),
+    #[error("jsonrpsee error ({})", .main_addr)]
+    Jsonrpsee {
+        #[source]
+        source: jsonrpsee::core::Error,
+        main_addr: SocketAddr,
+    },
     #[error("header error")]
     InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
     #[error("bitcoin consensus encode error")]
