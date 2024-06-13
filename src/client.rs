@@ -67,6 +67,7 @@ impl From<bitcoin::CompactTarget> for CompactTargetRepr {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Header {
     pub hash: BlockHash,
+    pub height: u32,
     pub version: bitcoin::block::Version,
     #[serde(rename = "previousblockhash", default = "BlockHash::all_zeros")]
     pub prev_blockhash: BlockHash,
