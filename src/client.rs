@@ -150,6 +150,10 @@ pub enum BlockCommitment {
         // TODO: parse script?
         script: String,
     },
+    #[serde(rename = "Sidechain proposal")]
+    SidechainProposal,
+    #[serde(rename = "Sidechain activation ack")]
+    SidechainActivationAck { hash: Sha256Hash },
 }
 
 #[derive(Clone, Debug)]
