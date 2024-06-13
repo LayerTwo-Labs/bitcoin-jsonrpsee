@@ -127,6 +127,17 @@ pub struct Block {
 #[serde(transparent)]
 pub struct SidechainId(pub u8);
 
+fn deserialize_reverse_hex<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: hex::FromHex,
+    <T as hex::FromHex>::Error: std::fmt::Display,
+{
+    let mut bytes: Vec<u8> = hex::serde::deserialize(deserializer)?;
+    bytes.reverse();
+    T::from_hex(hex::encode(bytes)).map_err(<D::Error as serde::de::Error>::custom)
+}
+
 /// Array item returned by `getblockcommitments`
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(tag = "type")]
@@ -138,7 +149,7 @@ pub enum BlockCommitment {
     },
     #[serde(rename = "BMM h*")]
     BmmHStar {
-        #[serde(rename = "h", deserialize_with = "hex::serde::deserialize")]
+        #[serde(rename = "h", deserialize_with = "deserialize_reverse_hex")]
         commitment: [u8; 32],
         #[serde(rename = "nsidechain")]
         sidechain_id: SidechainId,
