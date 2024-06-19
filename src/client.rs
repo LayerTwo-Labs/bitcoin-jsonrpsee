@@ -142,11 +142,6 @@ where
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(tag = "type")]
 pub enum BlockCommitment {
-    #[serde(rename = "SCDB update bytes")]
-    ScdbUpdateBytes {
-        // TODO: parse script?
-        script: String,
-    },
     #[serde(rename = "BMM h*")]
     BmmHStar {
         #[serde(rename = "h", deserialize_with = "deserialize_reverse_hex")]
@@ -156,15 +151,30 @@ pub enum BlockCommitment {
         #[serde(rename = "prevbytes", deserialize_with = "hex::serde::deserialize")]
         prev_bytes: [u8; 4],
     },
+    #[serde(rename = "SCDB update bytes")]
+    ScdbUpdateBytes {
+        // TODO: parse script?
+        script: String,
+    },
+    #[serde(rename = "Sidechain activation ack")]
+    SidechainActivationAck {
+        #[serde(rename = "hash", deserialize_with = "deserialize_reverse_hex")]
+        commitment: [u8; 32],
+    },
+    #[serde(rename = "Sidechain proposal")]
+    SidechainProposal,
+    #[serde(rename = "Withdrawal bundle hash")]
+    WithdrawalBundleHash {
+        #[serde(rename = "hash", deserialize_with = "deserialize_reverse_hex")]
+        commitment: [u8; 32],
+        #[serde(rename = "nsidechain")]
+        sidechain_id: SidechainId,
+    },
     #[serde(rename = "Witness commitment")]
     WitnessCommitment {
         // TODO: parse script?
         script: String,
     },
-    #[serde(rename = "Sidechain proposal")]
-    SidechainProposal,
-    #[serde(rename = "Sidechain activation ack")]
-    SidechainActivationAck { hash: Sha256Hash },
 }
 
 #[derive(Clone, Debug)]
