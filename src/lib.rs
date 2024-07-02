@@ -6,6 +6,7 @@ use bitcoin::{
     Amount, BlockHash,
 };
 use client::BlockCommitment;
+use http::HeaderValue;
 use jsonrpsee::http_client::{HeaderMap, HttpClient, HttpClientBuilder};
 use serde::{Deserialize, Serialize};
 
@@ -83,11 +84,11 @@ pub fn client(
     let auth = format!("{user}:{password}");
     let header_value = format!(
         "Basic {}",
-        base64::engine::general_purpose::STANDARD_NO_PAD.encode(auth)
-    )
-    .parse()?;
+        base64::engine::general_purpose::STANDARD.encode(auth)
+    );
+    let header_value = HeaderValue::from_str(&header_value)?;
     headers.insert("authorization", header_value);
-    let mut builder = HttpClientBuilder::default().set_headers(headers.clone());
+    let mut builder = HttpClientBuilder::default().set_headers(headers);
     if let Some(request_timeout) = request_timeout {
         builder = builder.request_timeout(request_timeout);
     }
