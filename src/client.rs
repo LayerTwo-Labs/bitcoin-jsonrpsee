@@ -3,10 +3,10 @@ use std::ops::{Deref, DerefMut};
 use bitcoin::{
     amount::serde::SerdeAmount,
     hashes::{ripemd160::Hash as Ripemd160Hash, sha256::Hash as Sha256Hash, Hash},
-    BlockHash,
+    BlockHash, Txid,
 };
 use jsonrpsee::proc_macros::rpc;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_with::{serde_as, DeserializeAs, DeserializeFromStr, FromInto};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -304,7 +304,7 @@ pub trait Main {
     async fn get_blockchain_info(&self) -> Result<BlockchainInfo, jsonrpsee::core::Error>;
 
     #[method(name = "getnetworkinfo")]
-    async fn get_network_info(&self) -> Result<serde_json::Value, jsonrpsee::core::Error>;
+    async fn get_network_info(&self) -> jsonrpsee::core::RpcResult<serde_json::Value>;
 
     #[method(name = "getbestblockhash")]
     async fn getbestblockhash(&self) -> Result<bitcoin::BlockHash, jsonrpsee::core::Error>;
@@ -390,6 +390,68 @@ pub trait Main {
         criticalhash: bitcoin::BlockHash,
         nsidechain: u8,
     ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
+}
+
+pub trait GetRawTransactionVerbosity {
+    type Response: DeserializeOwned;
+}
+
+#[derive(Debug)]
+pub struct GetRawTransactionVerbose<const VERBOSE: bool>;
+
+impl<const VERBOSE: bool> Serialize for GetRawTransactionVerbose<{ VERBOSE }> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        VERBOSE.serialize(serializer)
+    }
+}
+
+impl GetRawTransactionVerbosity for GetRawTransactionVerbose<false> {
+    type Response = String;
+}
+
+impl<'de> Deserialize<'de> for GetRawTransactionVerbose<false> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Debug, Deserialize)]
+        struct Repr(monostate::MustBe!(false));
+        let _ = Repr::deserialize(deserializer)?;
+        Ok(Self)
+    }
+}
+
+impl GetRawTransactionVerbosity for GetRawTransactionVerbose<true> {
+    type Response = serde_json::Value;
+}
+
+impl<'de> Deserialize<'de> for GetRawTransactionVerbose<true> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Debug, Deserialize)]
+        struct Repr(monostate::MustBe!(true));
+        let _ = Repr::deserialize(deserializer)?;
+        Ok(Self)
+    }
+}
+
+#[rpc(client)]
+pub trait GetRawTransaction<T>
+where
+    T: GetRawTransactionVerbosity,
+{
+    #[method(name = "getrawtransaction")]
+    async fn get_raw_transaction(
+        &self,
+        txid: Txid,
+        verbose: T,
+        block_hash: Option<bitcoin::BlockHash>,
+    ) -> Result<<T as GetRawTransactionVerbosity>::Response, jsonrpsee::core::Error>;
 }
 
 // Arguments:
