@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 
 use base64::Engine as _;
 use bitcoin::{
@@ -41,13 +41,6 @@ pub struct TwoWayPegData {
     pub bundle_statuses: Vec<(bitcoin::Txid, WithdrawalBundleStatus)>,
 }
 
-#[derive(Clone)]
-pub struct Drivechain {
-    pub sidechain_number: u8,
-    pub client: HttpClient,
-    pub main_addr: SocketAddr,
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Output {
     pub address: String,
@@ -57,6 +50,58 @@ pub struct Output {
 #[derive(Copy, Clone, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
 #[error("Block not found: {0}")]
 pub struct BlockNotFoundError(pub bitcoin::BlockHash);
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("jsonrpsee error ({})", .main_addr)]
+    Jsonrpsee {
+        #[source]
+        source: jsonrpsee::core::ClientError,
+        main_addr: SocketAddr,
+    },
+    #[error("header error")]
+    InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
+    #[error("bitcoin consensus encode error")]
+    BitcoinConsensusEncode(#[from] bitcoin::consensus::encode::Error),
+    #[error("bitcoin hex error")]
+    BitcoinHex(#[from] hex_conservative::HexToArrayError),
+    #[error("hex error")]
+    Hex(#[from] hex::FromHexError),
+    #[error("no next block for prev_main_hash = {prev_main_hash}")]
+    NoNextBlock { prev_main_hash: bitcoin::BlockHash },
+    #[error("io error")]
+    Io(#[from] std::io::Error),
+}
+
+pub fn client(
+    main_addr: SocketAddr,
+    password: &str,
+    request_timeout: Option<Duration>,
+    user: &str,
+) -> Result<HttpClient, Error> {
+    let mut headers = HeaderMap::new();
+    let auth = format!("{user}:{password}");
+    let header_value = format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD_NO_PAD.encode(auth)
+    )
+    .parse()?;
+    headers.insert("authorization", header_value);
+    let mut builder = HttpClientBuilder::default().set_headers(headers.clone());
+    if let Some(request_timeout) = request_timeout {
+        builder = builder.request_timeout(request_timeout);
+    }
+    builder
+        .build(format!("http://{main_addr}"))
+        .map_err(|source| Error::Jsonrpsee { source, main_addr })
+}
+
+#[derive(Clone)]
+pub struct Drivechain {
+    pub sidechain_number: u8,
+    pub client: HttpClient,
+    pub main_addr: SocketAddr,
+}
 
 impl Drivechain {
     // Verify BMM against the specified mainchain block.
@@ -72,7 +117,7 @@ impl Drivechain {
             .await
         {
             Ok(_) => Ok(true),
-            Err(jsonrpsee::core::Error::Call(err))
+            Err(jsonrpsee::core::ClientError::Call(err))
                 if JsonrpseeErrorCode::from(err.code()) == JsonrpseeErrorCode::ServerError(-1)
                     && err.message() == "h* not found in block" =>
             {
@@ -130,7 +175,7 @@ impl Drivechain {
         use jsonrpsee::types::error::ErrorCode as JsonrpseeErrorCode;
         match self.client.get_block_commitments(main_hash).await {
             Ok(commitments) => Ok(Ok(commitments.0)),
-            Err(jsonrpsee::core::Error::Call(err))
+            Err(jsonrpsee::core::ClientError::Call(err))
                 if JsonrpseeErrorCode::from(err.code()) == JsonrpseeErrorCode::ServerError(-1)
                     && err.message() == "Block not found" =>
             {
@@ -288,47 +333,15 @@ impl Drivechain {
         main_addr: SocketAddr,
         user: &str,
         password: &str,
+        request_timeout: Option<Duration>,
     ) -> Result<Self, Error> {
-        let mut headers = HeaderMap::new();
-        let auth = format!("{user}:{password}");
-        let header_value = format!(
-            "Basic {}",
-            base64::engine::general_purpose::STANDARD_NO_PAD.encode(auth)
-        )
-        .parse()?;
-        headers.insert("authorization", header_value);
-        let client = HttpClientBuilder::default()
-            .set_headers(headers.clone())
-            .build(format!("http://{main_addr}"))
-            .map_err(|source| Error::Jsonrpsee { source, main_addr })?;
+        let client = client(main_addr, password, request_timeout, user)?;
         Ok(Drivechain {
             sidechain_number,
             client,
             main_addr,
         })
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("jsonrpsee error ({})", .main_addr)]
-    Jsonrpsee {
-        #[source]
-        source: jsonrpsee::core::Error,
-        main_addr: SocketAddr,
-    },
-    #[error("header error")]
-    InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
-    #[error("bitcoin consensus encode error")]
-    BitcoinConsensusEncode(#[from] bitcoin::consensus::encode::Error),
-    #[error("bitcoin hex error")]
-    BitcoinHex(#[from] hex_conservative::HexToArrayError),
-    #[error("hex error")]
-    Hex(#[from] hex::FromHexError),
-    #[error("no next block for prev_main_hash = {prev_main_hash}")]
-    NoNextBlock { prev_main_hash: bitcoin::BlockHash },
-    #[error("io error")]
-    Io(#[from] std::io::Error),
 }
 
 #[cfg(test)]
