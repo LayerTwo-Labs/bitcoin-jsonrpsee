@@ -253,42 +253,10 @@ pub struct SidechainActivationStatus {
 
 #[rpc(client)]
 pub trait Main {
-    #[method(name = "stop")]
-    async fn stop(&self) -> Result<String, jsonrpsee::core::Error>;
-    // FIXME: Define a "Deposit Address" type.
-    #[method(name = "listwithdrawalstatus")]
-    async fn listwithdrawalstatus(
-        &self,
-        nsidechain: u8,
-    ) -> Result<Vec<WithdrawalStatus>, jsonrpsee::core::Error>;
-    #[method(name = "listspentwithdrawals")]
-    async fn listspentwithdrawals(&self) -> Result<Vec<SpentWithdrawal>, jsonrpsee::core::Error>;
-    #[method(name = "listfailedwithdrawals")]
-    async fn listfailedwithdrawals(&self) -> Result<Vec<FailedWithdrawal>, jsonrpsee::core::Error>;
-    #[method(name = "getblockcount")]
-    async fn getblockcount(&self) -> Result<usize, jsonrpsee::core::Error>;
-    #[method(name = "getblockheader")]
-    async fn getblockheader(
-        &self,
-        block_hash: bitcoin::BlockHash,
-    ) -> Result<Header, jsonrpsee::core::Error>;
-    #[method(name = "getbestblockhash")]
-    async fn getbestblockhash(&self) -> Result<bitcoin::BlockHash, jsonrpsee::core::Error>;
-    #[method(name = "getblock")]
-    async fn getblock(
-        &self,
-        blockhash: bitcoin::BlockHash,
-        verbosity: Option<usize>,
-    ) -> Result<Block, jsonrpsee::core::Error>;
+    #[method(name = "countsidechaindeposits")]
+    async fn count_sidechain_deposits(&self, nsidechain: u8)
+        -> Result<u32, jsonrpsee::core::Error>;
 
-    #[method(name = "getblockcommitments")]
-    async fn get_block_commitments(
-        &self,
-        blockhash: bitcoin::BlockHash,
-    ) -> Result<BlockCommitments, jsonrpsee::core::Error>;
-
-    #[method(name = "getblockchaininfo")]
-    async fn get_blockchain_info(&self) -> Result<BlockchainInfo, jsonrpsee::core::Error>;
     #[method(name = "createbmmcriticaldatatx")]
     async fn createbmmcriticaldatatx(
         &self,
@@ -298,50 +266,6 @@ pub trait Main {
         nsidechain: u8,
         prevbytes: &str,
     ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
-    #[method(name = "verifybmm")]
-    async fn verifybmm(
-        &self,
-        blockhash: bitcoin::BlockHash,
-        criticalhash: bitcoin::BlockHash,
-        nsidechain: u8,
-    ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
-
-    #[method(name = "listsidechaindepositsbyblock")]
-    async fn listsidechaindepositsbyblock(
-        &self,
-        nsidechain: u8,
-        end_blockhash: Option<bitcoin::BlockHash>,
-        start_blockhash: Option<bitcoin::BlockHash>,
-    ) -> Result<Vec<Deposit>, jsonrpsee::core::Error>;
-
-    #[method(name = "receivewithdrawalbundle")]
-    async fn receivewithdrawalbundle(
-        &self,
-        nsidechain: u8,
-        // Raw transaction hex.
-        rawtx: &str,
-    ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
-
-    #[method(name = "generate")]
-    async fn generate(&self, num: u32) -> Result<serde_json::Value, jsonrpsee::core::Error>;
-
-    #[method(name = "generatetoaddress")]
-    async fn generate_to_address(
-        &self,
-        n_blocks: u32,
-        address: &bitcoin::Address<bitcoin::address::NetworkUnchecked>,
-    ) -> Result<Vec<BlockHash>, jsonrpsee::core::Error>;
-
-    #[method(name = "getnewaddress")]
-    async fn getnewaddress(
-        &self,
-        account: &str,
-        address_type: &str,
-    ) -> Result<bitcoin::Address<bitcoin::address::NetworkUnchecked>, jsonrpsee::core::Error>;
-
-    #[method(name = "countsidechaindeposits")]
-    async fn count_sidechain_deposits(&self, nsidechain: u8)
-        -> Result<u32, jsonrpsee::core::Error>;
 
     #[method(name = "createsidechaindeposit")]
     async fn createsidechaindeposit(
@@ -360,18 +284,112 @@ pub trait Main {
         sidechain_description: &str,
     ) -> Result<SidechainProposal, jsonrpsee::core::Error>;
 
+    #[method(name = "generate")]
+    async fn generate(&self, num: u32) -> Result<serde_json::Value, jsonrpsee::core::Error>;
+
+    #[method(name = "generatetoaddress")]
+    async fn generate_to_address(
+        &self,
+        n_blocks: u32,
+        address: &bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+    ) -> Result<Vec<BlockHash>, jsonrpsee::core::Error>;
+
+    #[method(name = "getblockcommitments")]
+    async fn get_block_commitments(
+        &self,
+        blockhash: bitcoin::BlockHash,
+    ) -> Result<BlockCommitments, jsonrpsee::core::Error>;
+
+    #[method(name = "getblockchaininfo")]
+    async fn get_blockchain_info(&self) -> Result<BlockchainInfo, jsonrpsee::core::Error>;
+
+    #[method(name = "getnetworkinfo")]
+    async fn get_network_info(&self) -> Result<serde_json::Value, jsonrpsee::core::Error>;
+
+    #[method(name = "getbestblockhash")]
+    async fn getbestblockhash(&self) -> Result<bitcoin::BlockHash, jsonrpsee::core::Error>;
+
+    #[method(name = "getblock")]
+    async fn getblock(
+        &self,
+        blockhash: bitcoin::BlockHash,
+        verbosity: Option<usize>,
+    ) -> Result<Block, jsonrpsee::core::Error>;
+
+    #[method(name = "getblockcount")]
+    async fn getblockcount(&self) -> Result<usize, jsonrpsee::core::Error>;
+
+    #[method(name = "getblockheader")]
+    async fn getblockheader(
+        &self,
+        block_hash: bitcoin::BlockHash,
+    ) -> Result<Header, jsonrpsee::core::Error>;
+
+    #[method(name = "getnewaddress")]
+    async fn getnewaddress(
+        &self,
+        account: &str,
+        address_type: &str,
+    ) -> Result<bitcoin::Address<bitcoin::address::NetworkUnchecked>, jsonrpsee::core::Error>;
+
+    #[method(name = "invalidateblock")]
+    async fn invalidate_block(
+        &self,
+        block_hash: bitcoin::BlockHash,
+    ) -> Result<(), jsonrpsee::core::Error>;
+
     #[method(name = "listactivesidechains")]
     async fn list_active_sidechains(
         &self,
     ) -> Result<Vec<serde_json::Value>, jsonrpsee::core::Error>;
 
-    #[method(name = "listsidechainproposals")]
-    async fn list_sidechain_proposals(&self) -> Result<Vec<SidechainInfo>, jsonrpsee::core::Error>;
-
     #[method(name = "listsidechainactivationstatus")]
     async fn list_sidechain_activation_status(
         &self,
     ) -> Result<Vec<SidechainActivationStatus>, jsonrpsee::core::Error>;
+
+    #[method(name = "listsidechainproposals")]
+    async fn list_sidechain_proposals(&self) -> Result<Vec<SidechainInfo>, jsonrpsee::core::Error>;
+
+    #[method(name = "listfailedwithdrawals")]
+    async fn listfailedwithdrawals(&self) -> Result<Vec<FailedWithdrawal>, jsonrpsee::core::Error>;
+
+    #[method(name = "listsidechaindepositsbyblock")]
+    async fn listsidechaindepositsbyblock(
+        &self,
+        nsidechain: u8,
+        end_blockhash: Option<bitcoin::BlockHash>,
+        start_blockhash: Option<bitcoin::BlockHash>,
+    ) -> Result<Vec<Deposit>, jsonrpsee::core::Error>;
+
+    #[method(name = "listspentwithdrawals")]
+    async fn listspentwithdrawals(&self) -> Result<Vec<SpentWithdrawal>, jsonrpsee::core::Error>;
+
+    // FIXME: Define a "Deposit Address" type.
+    #[method(name = "listwithdrawalstatus")]
+    async fn listwithdrawalstatus(
+        &self,
+        nsidechain: u8,
+    ) -> Result<Vec<WithdrawalStatus>, jsonrpsee::core::Error>;
+
+    #[method(name = "receivewithdrawalbundle")]
+    async fn receivewithdrawalbundle(
+        &self,
+        nsidechain: u8,
+        // Raw transaction hex.
+        rawtx: &str,
+    ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
+
+    #[method(name = "stop")]
+    async fn stop(&self) -> Result<String, jsonrpsee::core::Error>;
+
+    #[method(name = "verifybmm")]
+    async fn verifybmm(
+        &self,
+        blockhash: bitcoin::BlockHash,
+        criticalhash: bitcoin::BlockHash,
+        nsidechain: u8,
+    ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
 }
 
 // Arguments:
