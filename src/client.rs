@@ -6,6 +6,7 @@ use bitcoin::{
     BlockHash, Txid,
 };
 use jsonrpsee::proc_macros::rpc;
+use monostate::MustBe;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_with::{serde_as, DeserializeAs, DeserializeFromStr, FromInto};
 
@@ -202,10 +203,31 @@ impl<'de> Deserialize<'de> for BlockCommitments {
     }
 }
 
+#[derive(Debug, Default, Serialize)]
+pub struct BlockTemplateRequest {
+    #[allow(clippy::type_complexity)]
+    rules: [MustBe!("segwit"); 1],
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+pub struct BlockTemplate {
+    #[serde(rename = "previousblockhash")]
+    pub prev_blockhash: bitcoin::BlockHash,
+    #[serde(rename = "bits")]
+    #[serde_as(as = "FromInto<CompactTargetRepr>")]
+    pub target: bitcoin::CompactTarget,
+    pub height: u32,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct BlockchainInfo {
     #[serde(with = "bitcoin::network::as_core_arg")]
     pub chain: bitcoin::Network,
+    pub blocks: u32,
+    #[serde(rename = "bestblockhash")]
+    pub best_blockhash: bitcoin::BlockHash,
+    pub difficulty: f64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -299,6 +321,12 @@ pub trait Main {
         &self,
         blockhash: bitcoin::BlockHash,
     ) -> Result<BlockCommitments, jsonrpsee::core::Error>;
+
+    #[method(name = "getblocktemplate")]
+    async fn get_block_template(
+        &self,
+        block_template_request: BlockTemplateRequest,
+    ) -> Result<BlockTemplate, jsonrpsee::core::Error>;
 
     #[method(name = "getblockchaininfo")]
     async fn get_blockchain_info(&self) -> Result<BlockchainInfo, jsonrpsee::core::Error>;
