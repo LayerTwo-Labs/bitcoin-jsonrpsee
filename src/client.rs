@@ -3,12 +3,12 @@ use std::ops::{Deref, DerefMut};
 use bitcoin::{
     amount::serde::SerdeAmount,
     hashes::{ripemd160::Hash as Ripemd160Hash, sha256::Hash as Sha256Hash, Hash},
-    BlockHash, Txid,
+    BlockHash, Txid, Wtxid,
 };
 use jsonrpsee::proc_macros::rpc;
 use monostate::MustBe;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_with::{serde_as, DeserializeAs, DeserializeFromStr, FromInto};
+use serde_with::{serde_as, DeserializeAs, DeserializeFromStr, FromInto, Map};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct WithdrawalStatus {
@@ -90,6 +90,62 @@ impl Header {
     pub fn work(&self) -> bitcoin::Work {
         self.target().to_work()
     }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+pub struct RawMempoolTxFees {
+    pub base: u64,
+    pub modified: u64,
+    pub ancestor: u64,
+    pub descendant: u64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct RawMempoolTxInfo {
+    pub vsize: u64,
+    pub weight: u64,
+    #[serde(rename = "descendantcount")]
+    pub descendant_count: u64,
+    #[serde(rename = "descendantsize")]
+    pub descendant_size: u64,
+    #[serde(rename = "ancestorcount")]
+    pub ancestor_count: u64,
+    #[serde(rename = "ancestorsize")]
+    pub ancestor_size: u64,
+    pub wtxid: Wtxid,
+    pub fees: RawMempoolTxFees,
+    pub depends: Vec<Txid>,
+    #[serde(rename = "spentby")]
+    pub spent_by: Vec<Txid>,
+    #[serde(rename = "bip125replaceable")]
+    pub bip125_replaceable: bool,
+    pub unbroadcast: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct RawMempoolWithSequence {
+    pub txids: Vec<Txid>,
+    pub mempool_sequence: u64,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Deserialize)]
+pub struct RawMempoolVerbose {
+    #[serde_as(as = "Map<_, _>")]
+    pub entries: Vec<(Txid, RawMempoolTxInfo)>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct TxOutSetInfo {
+    pub height: u32,
+    #[serde(rename = "bestblock")]
+    pub best_block: BlockHash,
+    #[serde(rename = "transactions")]
+    pub n_txs: u64,
+    #[serde(rename = "txouts")]
+    pub n_txouts: u64,
+    #[serde(with = "hex::serde")]
+    pub hash_serialized_3: [u8; 32],
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -331,6 +387,12 @@ pub trait Main {
     #[method(name = "getblockchaininfo")]
     async fn get_blockchain_info(&self) -> Result<BlockchainInfo, jsonrpsee::core::Error>;
 
+    #[method(name = "getmempoolentry")]
+    async fn get_mempool_entry(
+        &self,
+        txid: Txid,
+    ) -> Result<RawMempoolTxInfo, jsonrpsee::core::Error>;
+
     #[method(name = "getnetworkinfo")]
     async fn get_network_info(&self) -> jsonrpsee::core::RpcResult<serde_json::Value>;
 
@@ -359,6 +421,9 @@ pub trait Main {
         account: &str,
         address_type: &str,
     ) -> Result<bitcoin::Address<bitcoin::address::NetworkUnchecked>, jsonrpsee::core::Error>;
+
+    #[method(name = "gettxoutsetinfo")]
+    async fn gettxoutsetinfo(&self) -> Result<TxOutSetInfo, jsonrpsee::core::Error>;
 
     #[method(name = "invalidateblock")]
     async fn invalidate_block(
@@ -418,6 +483,83 @@ pub trait Main {
         criticalhash: bitcoin::BlockHash,
         nsidechain: u8,
     ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BoolWitness<const BOOL: bool>;
+
+impl<const BOOL: bool> Serialize for BoolWitness<{ BOOL }> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        BOOL.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for BoolWitness<false> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Debug, Deserialize)]
+        struct Repr(monostate::MustBe!(false));
+        let _ = Repr::deserialize(deserializer)?;
+        Ok(Self)
+    }
+}
+
+impl<'de> Deserialize<'de> for BoolWitness<true> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Debug, Deserialize)]
+        struct Repr(monostate::MustBe!(true));
+        let _ = Repr::deserialize(deserializer)?;
+        Ok(Self)
+    }
+}
+
+pub struct GetRawMempoolParams<Verbose, MempoolSequence>(PhantomData<(Verbose, MempoolSequence)>);
+
+pub trait GetRawMempoolResponse {
+    type Response: DeserializeOwned;
+}
+
+impl GetRawMempoolResponse for GetRawMempoolParams<BoolWitness<false>, BoolWitness<false>> {
+    type Response = Vec<Txid>;
+}
+
+impl GetRawMempoolResponse for GetRawMempoolParams<BoolWitness<false>, BoolWitness<true>> {
+    type Response = RawMempoolWithSequence;
+}
+
+impl GetRawMempoolResponse for GetRawMempoolParams<BoolWitness<true>, BoolWitness<false>> {
+    type Response = RawMempoolVerbose;
+}
+
+#[rpc(
+    client,
+    client_bounds(
+        Verbose: Serialize + Send + Sync + 'static,
+        MempoolSequence: Serialize + Send + Sync + 'static,
+        GetRawMempoolParams<Verbose, MempoolSequence>: GetRawMempoolResponse
+    )
+)]
+pub trait GetRawMempool<Verbose, MempoolSequence>
+where
+    GetRawMempoolParams<Verbose, MempoolSequence>: GetRawMempoolResponse,
+{
+    #[method(name = "getrawmempool")]
+    async fn get_raw_mempool(
+        &self,
+        verbose: Verbose,
+        mempool_sequence: MempoolSequence,
+    ) -> Result<
+        <GetRawMempoolParams<Verbose, MempoolSequence> as GetRawMempoolResponse>::Response,
+        jsonrpsee::core::Error,
+    >;
 }
 
 pub trait GetRawTransactionVerbosity {
