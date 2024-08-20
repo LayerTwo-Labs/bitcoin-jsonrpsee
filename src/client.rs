@@ -1,14 +1,20 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 
 use bitcoin::{
     amount::serde::SerdeAmount,
-    hashes::{ripemd160::Hash as Ripemd160Hash, sha256::Hash as Sha256Hash, Hash},
-    BlockHash, Txid, Wtxid,
+    block,
+    hashes::{ripemd160::Hash as Ripemd160Hash, sha256::Hash as Sha256Hash, Hash as _},
+    BlockHash, Txid, Weight, Wtxid,
 };
+use hashlink::LinkedHashMap;
 use jsonrpsee::proc_macros::rpc;
 use monostate::MustBe;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_with::{serde_as, DeserializeAs, DeserializeFromStr, FromInto, Map};
+use serde_json::Value as JsonValue;
+use serde_with::{serde_as, DeserializeAs, DeserializeFromStr, FromInto, Map, SerializeAs};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct WithdrawalStatus {
@@ -259,21 +265,101 @@ impl<'de> Deserialize<'de> for BlockCommitments {
     }
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct BlockTemplateRequest {
     #[allow(clippy::type_complexity)]
     rules: [MustBe!("segwit"); 1],
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BlockTemplateTransaction {
+    #[serde(with = "hex::serde")]
+    pub data: Vec<u8>,
+    pub txid: Txid,
+    // TODO: check that this is the wtxid
+    pub hash: Wtxid,
+    pub depends: Vec<u32>,
+    pub fee: i64,
+    pub sigops: Option<u64>,
+    pub weight: u64,
+}
+
+/// Representation used with serde_with
+#[derive(Clone, Copy, Debug, Default)]
+struct LinkedHashMapRepr<K, V>(PhantomData<(K, V)>);
+
+impl<'de, K0, K1, V0, V1> DeserializeAs<'de, LinkedHashMap<K1, V1>> for LinkedHashMapRepr<K0, V0>
+where
+    K0: DeserializeAs<'de, K1>,
+    K1: Eq + std::hash::Hash,
+    V0: DeserializeAs<'de, V1>,
+{
+    fn deserialize_as<D>(deserializer: D) -> Result<LinkedHashMap<K1, V1>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        <serde_with::Map<K0, V0> as DeserializeAs<'de, Vec<(K1, V1)>>>::deserialize_as(deserializer)
+            .map(LinkedHashMap::from_iter)
+    }
+}
+
+impl<K0, K1, V0, V1> SerializeAs<LinkedHashMap<K1, V1>> for LinkedHashMapRepr<K0, V0>
+where
+    K0: SerializeAs<K1>,
+    V0: SerializeAs<V1>,
+{
+    fn serialize_as<S>(source: &LinkedHashMap<K1, V1>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        <serde_with::Map<&K0, &V0> as SerializeAs<Vec<(&K1, &V1)>>>::serialize_as(
+            &Vec::from_iter(source),
+            serializer,
+        )
+    }
+}
+
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BlockTemplate {
+    pub version: block::Version,
+    pub rules: Vec<String>,
+    #[serde(rename = "vbavailable")]
+    pub version_bits_available: LinkedHashMap<String, JsonValue>,
+    #[serde(rename = "vbrequired")]
+    pub version_bits_required: block::Version,
     #[serde(rename = "previousblockhash")]
     pub prev_blockhash: bitcoin::BlockHash,
+    pub transactions: Vec<BlockTemplateTransaction>,
+    #[serde(rename = "coinbaseaux")]
+    #[serde_as(as = "LinkedHashMapRepr<_, serde_with::hex::Hex>")]
+    pub coinbase_aux: LinkedHashMap<String, Vec<u8>>,
+    #[serde(rename = "coinbasevalue")]
+    pub coinbase_value: u64,
+    /// MUST be omitted if the server does not support long polling
+    #[serde(rename = "longpollid")]
+    pub long_poll_id: Option<String>,
+    #[serde_as(as = "serde_with::hex::Hex")]
+    pub target: [u8; 32],
+    pub mintime: u64,
+    pub mutable: Vec<String>,
+    #[serde(rename = "noncerange")]
+    #[serde_as(as = "serde_with::hex::Hex")]
+    pub nonce_range: [u8; 8],
+    #[serde(rename = "sigoplimit")]
+    pub sigop_limit: u64,
+    #[serde(rename = "sizelimit")]
+    pub size_limit: u64,
+    #[serde(rename = "weightlimit")]
+    pub weight_limit: Weight,
+    #[serde(rename = "curtime")]
+    pub current_time: u64,
     #[serde(rename = "bits")]
     #[serde_as(as = "FromInto<CompactTargetRepr>")]
-    pub target: bitcoin::CompactTarget,
+    pub compact_target: bitcoin::CompactTarget,
     pub height: u32,
+    #[serde_as(as = "Option<serde_with::hex::Hex>")]
+    pub default_witness_commitment: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Deserialize)]
