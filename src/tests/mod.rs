@@ -67,3 +67,14 @@ fn test_deserialize_serialize_getblocktemplate() {
         .expect("Failed to deserialize reserialized block template");
     assert_eq!(block_template, block_template_2);
 }
+
+#[test]
+// Test deserializing a result from `getnetworkinfo`
+fn test_deserialize_getnetworkinfo() {
+    let json_str = include_str!("json/getnetworkinfo.json");
+    let mut json_des = serde_json::Deserializer::from_str(json_str);
+    let res: Response<client::NetworkInfo> = serde_path_to_error::deserialize(&mut json_des)
+        .expect("Failed to deserialize network info");
+    let res: RpcResult<response::Success<_>> = res.try_into();
+    assert!(res.is_ok())
+}

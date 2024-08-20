@@ -160,6 +160,13 @@ pub enum Vote {
     Downvote,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct NetworkInfo {
+    // Time offset in seconds
+    #[serde(rename = "timeoffset")]
+    pub time_offset_s: i64,
+}
+
 #[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -481,7 +488,7 @@ pub trait Main {
     ) -> Result<RawMempoolTxInfo, jsonrpsee::core::Error>;
 
     #[method(name = "getnetworkinfo")]
-    async fn get_network_info(&self) -> jsonrpsee::core::RpcResult<serde_json::Value>;
+    async fn get_network_info(&self) -> jsonrpsee::core::RpcResult<NetworkInfo>;
 
     #[method(name = "getbestblockhash")]
     async fn getbestblockhash(&self) -> Result<bitcoin::BlockHash, jsonrpsee::core::Error>;
