@@ -71,7 +71,7 @@ pub enum Error {
     #[error("no next block for prev_main_hash = {prev_main_hash}")]
     NoNextBlock { prev_main_hash: bitcoin::BlockHash },
     #[error("io error")]
-    Io(#[from] std::io::Error),
+    Io(#[from] bitcoin::io::Error),
 }
 
 pub fn client(
@@ -221,13 +221,13 @@ impl Drivechain {
         for deposit in &deposits {
             let transaction = hex::decode(&deposit.txhex)?;
             let transaction =
-                bitcoin::Transaction::consensus_decode(&mut std::io::Cursor::new(transaction))?;
+                bitcoin::Transaction::consensus_decode(&mut bitcoin::io::Cursor::new(transaction))?;
+            let txid = transaction.compute_txid();
             if let Some(start) = start {
                 if deposit.hashblock == start {
                     last_total = transaction.output[deposit.nburnindex].value;
                     #[cfg(feature = "tracing")]
                     if tracing::enabled!(tracing::Level::DEBUG) {
-                        let txid = transaction.txid();
                         tracing::debug!("ignoring tx {txid}");
                     }
                     continue;
@@ -238,14 +238,13 @@ impl Drivechain {
                 last_total = total;
                 #[cfg(feature = "tracing")]
                 if tracing::enabled!(tracing::Level::DEBUG) {
-                    let txid = transaction.txid();
                     tracing::debug!("ignoring tx {txid}");
                 }
                 continue;
             }
             let value = total - last_total;
             let outpoint = bitcoin::OutPoint {
-                txid: transaction.txid(),
+                txid,
                 vout: deposit.nburnindex as u32,
             };
             last_total = total;
