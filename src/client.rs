@@ -160,6 +160,7 @@ pub enum Vote {
     Downvote,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Block {
@@ -176,7 +177,9 @@ pub struct Block {
     pub time: u32,
     pub mediantime: u32,
     pub nonce: u32,
-    pub bits: String,
+    #[serde(rename = "bits")]
+    #[serde_as(as = "FromInto<CompactTargetRepr>")]
+    pub compact_target: bitcoin::CompactTarget,
     pub difficulty: f64,
     pub chainwork: String,
     pub previousblockhash: Option<bitcoin::BlockHash>,
