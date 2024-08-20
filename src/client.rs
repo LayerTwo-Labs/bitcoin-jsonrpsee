@@ -4,7 +4,6 @@ use std::{
 };
 
 use bitcoin::{
-    amount::serde::SerdeAmount,
     block,
     hashes::{ripemd160::Hash as Ripemd160Hash, sha256::Hash as Sha256Hash, Hash as _},
     BlockHash, Txid, Weight, Wtxid,
@@ -41,11 +40,10 @@ pub struct FailedWithdrawal {
 struct CompactTargetRepr(bitcoin::CompactTarget);
 
 impl std::str::FromStr for CompactTargetRepr {
-    type Err = bitcoin::error::ParseIntError;
+    type Err = bitcoin::error::UnprefixedHexError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        use bitcoin::string::FromHexStr;
-        bitcoin::CompactTarget::from_hex_str_no_prefix(s).map(Self)
+        bitcoin::CompactTarget::from_unprefixed_hex(s).map(Self)
     }
 }
 
@@ -720,8 +718,8 @@ where
 
 // FIXME: Make mainchain API machine friendly. Parsing human readable amounts
 // here is stupid -- just take and return values in satoshi.
-#[derive(Clone, Copy)]
-pub struct AmountBtc(pub bitcoin::Amount);
+#[derive(Clone, Copy, Deserialize, Serialize)]
+pub struct AmountBtc(#[serde(with = "bitcoin::amount::serde::as_btc")] pub bitcoin::Amount);
 
 impl From<bitcoin::Amount> for AmountBtc {
     fn from(other: bitcoin::Amount) -> AmountBtc {
@@ -746,23 +744,5 @@ impl Deref for AmountBtc {
 impl DerefMut for AmountBtc {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
-    }
-}
-
-impl<'de> Deserialize<'de> for AmountBtc {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(AmountBtc(bitcoin::Amount::des_btc(deserializer)?))
-    }
-}
-
-impl Serialize for AmountBtc {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.0.ser_btc(serializer)
     }
 }
