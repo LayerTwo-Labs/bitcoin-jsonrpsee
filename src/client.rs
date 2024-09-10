@@ -559,6 +559,13 @@ pub trait Main {
         nsidechain: u8,
     ) -> Result<Vec<WithdrawalStatus>, jsonrpsee::core::Error>;
 
+    #[method(name = "prioritisetransaction", param_kind = map)]
+    async fn prioritize_transaction(
+        &self,
+        txid: Txid,
+        fee_delta: i64,
+    ) -> Result<bool, jsonrpsee::core::Error>;
+
     #[method(name = "receivewithdrawalbundle")]
     async fn receivewithdrawalbundle(
         &self,
