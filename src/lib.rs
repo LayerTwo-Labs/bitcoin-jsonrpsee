@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
 
 use base64::Engine as _;
 use bitcoin::{
@@ -74,10 +74,11 @@ pub enum Error {
     Io(#[from] bitcoin::io::Error),
 }
 
+/// Use the `builder` argument to manually set client options
 pub fn client(
     main_addr: SocketAddr,
+    builder: Option<HttpClientBuilder>,
     password: &str,
-    request_timeout: Option<Duration>,
     user: &str,
 ) -> Result<HttpClient, Error> {
     let mut headers = HeaderMap::new();
@@ -88,11 +89,9 @@ pub fn client(
     );
     let header_value = HeaderValue::from_str(&header_value)?;
     headers.insert("authorization", header_value);
-    let mut builder = HttpClientBuilder::default().set_headers(headers);
-    if let Some(request_timeout) = request_timeout {
-        builder = builder.request_timeout(request_timeout);
-    }
     builder
+        .unwrap_or_default()
+        .set_headers(headers)
         .build(format!("http://{main_addr}"))
         .map_err(|source| Error::Jsonrpsee { source, main_addr })
 }
@@ -328,14 +327,15 @@ impl Drivechain {
         Ok(())
     }
 
+    /// Use the `builder` argument to manually set client options
     pub fn new(
+        client_builder: Option<HttpClientBuilder>,
         sidechain_number: u8,
         main_addr: SocketAddr,
         user: &str,
         password: &str,
-        request_timeout: Option<Duration>,
     ) -> Result<Self, Error> {
-        let client = client(main_addr, password, request_timeout, user)?;
+        let client = client(main_addr, client_builder, password, user)?;
         Ok(Drivechain {
             sidechain_number,
             client,
