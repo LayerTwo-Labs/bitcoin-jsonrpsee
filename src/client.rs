@@ -15,6 +15,21 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_with::{serde_as, DeserializeAs, DeserializeFromStr, FromInto, Map, SerializeAs};
 
+/// Wrapper for consensus (de)serializing from hex
+#[derive(Debug, Deserialize, Serialize)]
+#[repr(transparent)]
+#[serde(
+    bound(
+        deserialize = "T: bitcoin::consensus::Decodable, Case: bitcoin::consensus::serde::hex::Case",
+        serialize = "T: bitcoin::consensus::Encodable, Case: bitcoin::consensus::serde::hex::Case",
+    ),
+    transparent
+)]
+pub struct ConsensusEncoded<T, Case = bitcoin::consensus::serde::hex::Lower>(
+    #[serde(with = "bitcoin::consensus::serde::With::<bitcoin::consensus::serde::Hex<Case>>")] pub T,
+    pub PhantomData<Case>,
+);
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct WithdrawalStatus {
     hash: bitcoin::Txid,
@@ -493,13 +508,6 @@ pub trait Main {
     #[method(name = "getbestblockhash")]
     async fn getbestblockhash(&self) -> Result<bitcoin::BlockHash, jsonrpsee::core::Error>;
 
-    #[method(name = "getblock")]
-    async fn getblock(
-        &self,
-        blockhash: bitcoin::BlockHash,
-        verbosity: Option<usize>,
-    ) -> Result<Block, jsonrpsee::core::Error>;
-
     #[method(name = "getblockcount")]
     async fn getblockcount(&self) -> Result<usize, jsonrpsee::core::Error>;
 
@@ -584,6 +592,81 @@ pub trait Main {
         criticalhash: bitcoin::BlockHash,
         nsidechain: u8,
     ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
+}
+
+pub struct U8Witness<const U8: u8>;
+
+impl<const U8: u8> Serialize for U8Witness<{ U8 }> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        U8.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for U8Witness<0> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Debug, Deserialize)]
+        struct Repr(monostate::MustBe!(0));
+        let _ = Repr::deserialize(deserializer)?;
+        Ok(Self)
+    }
+}
+
+impl<'de> Deserialize<'de> for U8Witness<1> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Debug, Deserialize)]
+        struct Repr(monostate::MustBe!(1));
+        let _ = Repr::deserialize(deserializer)?;
+        Ok(Self)
+    }
+}
+
+impl<'de> Deserialize<'de> for U8Witness<2> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Debug, Deserialize)]
+        struct Repr(monostate::MustBe!(2));
+        let _ = Repr::deserialize(deserializer)?;
+        Ok(Self)
+    }
+}
+
+pub trait GetBlockVerbosity {
+    type Response: DeserializeOwned;
+}
+
+impl GetBlockVerbosity for U8Witness<0> {
+    type Response = ConsensusEncoded<bitcoin::Block>;
+}
+
+impl GetBlockVerbosity for U8Witness<1> {
+    type Response = Block;
+}
+
+#[rpc(
+    client,
+    client_bounds(Verbosity: Serialize + Send + Sync + 'static)
+)]
+pub trait GetBlock<Verbosity>
+where
+    Verbosity: GetBlockVerbosity,
+{
+    #[method(name = "getblock")]
+    async fn get_block(
+        &self,
+        block_hash: BlockHash,
+        verbosity: Verbosity,
+    ) -> Result<<Verbosity as GetBlockVerbosity>::Response, jsonrpsee::core::Error>;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
