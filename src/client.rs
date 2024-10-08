@@ -598,6 +598,9 @@ pub trait Main {
     #[method(name = "stop")]
     async fn stop(&self) -> Result<String, jsonrpsee::core::Error>;
 
+    #[method(name = "submitblock")]
+    async fn submit_block(&self, block_hex: String) -> Result<(), jsonrpsee::core::Error>;
+
     #[method(name = "verifybmm")]
     async fn verifybmm(
         &self,
