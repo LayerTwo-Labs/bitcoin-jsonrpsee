@@ -111,6 +111,19 @@ impl Header {
     }
 }
 
+impl From<Header> for bitcoin::block::Header {
+    fn from(header: Header) -> Self {
+        Self {
+            version: header.version,
+            prev_blockhash: header.prev_blockhash,
+            merkle_root: header.merkle_root,
+            time: header.time,
+            bits: header.bits,
+            nonce: header.nonce,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub struct RawMempoolTxFees {
     pub base: u64,
