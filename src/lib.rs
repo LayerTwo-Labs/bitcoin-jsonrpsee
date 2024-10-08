@@ -5,7 +5,7 @@ use bitcoin::{
     consensus::{Decodable, Encodable},
     Amount, BlockHash,
 };
-use client::BlockCommitment;
+use client::{BlockCommitment, GetBlockClient, U8Witness};
 use http::HeaderValue;
 use jsonrpsee::http_client::{HeaderMap, HttpClient, HttpClientBuilder};
 use serde::{Deserialize, Serialize};
@@ -141,7 +141,7 @@ impl Drivechain {
         let main_hash = loop {
             if let Some(next_block_hash) = self
                 .client
-                .getblock(prev_main_hash, None)
+                .get_block(prev_main_hash, U8Witness::<1>)
                 .await
                 .map_err(|source| Error::Jsonrpsee {
                     source,
