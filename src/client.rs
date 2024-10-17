@@ -595,6 +595,16 @@ pub trait Main {
         rawtx: &str,
     ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
 
+    // Max fee rate: BTC/kvB value
+    // Max burn amount: BTC value
+    #[method(name = "sendrawtransaction")]
+    async fn send_raw_transaction(
+        &self,
+        tx_hex: String,
+        max_fee_rate: Option<f64>,
+        max_burn_amount: Option<f64>,
+    ) -> Result<(), jsonrpsee::core::Error>;
+
     #[method(name = "stop")]
     async fn stop(&self) -> Result<String, jsonrpsee::core::Error>;
 
