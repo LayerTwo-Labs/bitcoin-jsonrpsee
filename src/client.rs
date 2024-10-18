@@ -603,7 +603,7 @@ pub trait Main {
         tx_hex: String,
         max_fee_rate: Option<f64>,
         max_burn_amount: Option<f64>,
-    ) -> Result<(), jsonrpsee::core::Error>;
+    ) -> Result<bitcoin::Txid, jsonrpsee::core::Error>;
 
     #[method(name = "stop")]
     async fn stop(&self) -> Result<String, jsonrpsee::core::Error>;
