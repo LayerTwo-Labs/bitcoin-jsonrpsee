@@ -11,7 +11,6 @@ use bitcoin::{
 };
 use hashlink::LinkedHashMap;
 use jsonrpsee::proc_macros::rpc;
-use monostate::MustBe;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_with::{serde_as, DeserializeAs, DeserializeFromStr, FromInto, Map, SerializeAs};
@@ -304,8 +303,7 @@ impl<'de> Deserialize<'de> for BlockCommitments {
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct BlockTemplateRequest {
-    #[allow(clippy::type_complexity)]
-    rules: [MustBe!("segwit"); 1],
+    pub rules: Vec<String>,
     #[serde(default)]
     pub capabilities: HashSet<String>,
 }
