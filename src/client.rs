@@ -413,6 +413,25 @@ pub struct BlockTemplate {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct AddressInfo {
+    pub address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+    #[serde(rename = "scriptPubKey")]
+    pub script_pub_key: String,
+    #[serde(rename = "ismine")]
+    pub is_mine: bool,
+    #[serde(rename = "iswatchonly")]
+    pub is_watch_only: bool,
+    #[serde(rename = "isscript")]
+    pub is_script: bool,
+    #[serde(rename = "iswitness")]
+    pub is_witness: bool,
+    #[serde(rename = "hdkeypath")]
+    pub hd_key_path: String,
+    #[serde(rename = "hdseedid")]
+    pub hd_seed_id: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct BlockchainInfo {
     #[serde(with = "bitcoin::network::as_core_arg")]
     pub chain: bitcoin::Network,
@@ -543,6 +562,12 @@ pub trait Main {
         &self,
         block_hash: bitcoin::BlockHash,
     ) -> Result<Header, jsonrpsee::core::Error>;
+
+    #[method(name = "getaddressinfo")]
+    async fn get_address_info(
+        &self,
+        address: &bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+    ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
 
     #[method(name = "getnewaddress")]
     async fn getnewaddress(
