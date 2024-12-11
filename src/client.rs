@@ -567,7 +567,7 @@ pub trait Main {
     async fn get_address_info(
         &self,
         address: &bitcoin::Address<bitcoin::address::NetworkUnchecked>,
-    ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
+    ) -> Result<AddressInfo, jsonrpsee::core::Error>;
 
     #[method(name = "getnewaddress")]
     async fn getnewaddress(
