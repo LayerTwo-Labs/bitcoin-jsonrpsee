@@ -301,11 +301,21 @@ impl<'de> Deserialize<'de> for BlockCommitments {
     }
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct BlockTemplateRequest {
+    #[serde(default)]
     pub rules: Vec<String>,
     #[serde(default)]
     pub capabilities: HashSet<String>,
+}
+
+impl Default for BlockTemplateRequest {
+    fn default() -> Self {
+        Self {
+            rules: vec!["segwit".into()],
+            capabilities: HashSet::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
