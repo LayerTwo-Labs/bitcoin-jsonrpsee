@@ -11,7 +11,6 @@ use bitcoin::{
 };
 use hashlink::LinkedHashMap;
 use jsonrpsee::proc_macros::rpc;
-use monostate::MustBe;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_with::{serde_as, DeserializeAs, DeserializeFromStr, FromInto, Map, SerializeAs};
@@ -302,12 +301,21 @@ impl<'de> Deserialize<'de> for BlockCommitments {
     }
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct BlockTemplateRequest {
-    #[allow(clippy::type_complexity)]
-    rules: [MustBe!("segwit"); 1],
+    #[serde(default)]
+    pub rules: Vec<String>,
     #[serde(default)]
     pub capabilities: HashSet<String>,
+}
+
+impl Default for BlockTemplateRequest {
+    fn default() -> Self {
+        Self {
+            rules: vec!["segwit".into()],
+            capabilities: HashSet::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -406,8 +414,31 @@ pub struct BlockTemplate {
     #[serde_as(as = "FromInto<CompactTargetRepr>")]
     pub compact_target: bitcoin::CompactTarget,
     pub height: u32,
+
+    #[serde_as(as = "Option<serde_with::hex::Hex>")]
+    pub signet_challenge: Option<Vec<u8>>,
+
     #[serde_as(as = "Option<serde_with::hex::Hex>")]
     pub default_witness_commitment: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddressInfo {
+    pub address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+    #[serde(rename = "scriptPubKey")]
+    pub script_pub_key: String,
+    #[serde(rename = "ismine")]
+    pub is_mine: bool,
+    #[serde(rename = "iswatchonly")]
+    pub is_watch_only: bool,
+    #[serde(rename = "isscript")]
+    pub is_script: bool,
+    #[serde(rename = "iswitness")]
+    pub is_witness: bool,
+    #[serde(rename = "hdkeypath")]
+    pub hd_key_path: String,
+    #[serde(rename = "hdseedid")]
+    pub hd_seed_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -541,6 +572,12 @@ pub trait Main {
         &self,
         block_hash: bitcoin::BlockHash,
     ) -> Result<Header, jsonrpsee::core::Error>;
+
+    #[method(name = "getaddressinfo")]
+    async fn get_address_info(
+        &self,
+        address: &bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+    ) -> Result<AddressInfo, jsonrpsee::core::Error>;
 
     #[method(name = "getnewaddress")]
     async fn getnewaddress(
