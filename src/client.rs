@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
@@ -305,6 +306,8 @@ impl<'de> Deserialize<'de> for BlockCommitments {
 pub struct BlockTemplateRequest {
     #[allow(clippy::type_complexity)]
     rules: [MustBe!("segwit"); 1],
+    #[serde(default)]
+    pub capabilities: HashSet<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -355,6 +358,15 @@ where
     }
 }
 
+/// `coinbasetxn` or `coinbasevalue` field
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum CoinbaseTxnOrValue {
+    #[serde(rename = "coinbasetxn")]
+    Txn(BlockTemplateTransaction),
+    #[serde(rename = "coinbasevalue")]
+    ValueSats(u64),
+}
+
 #[serde_as]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BlockTemplate {
@@ -370,8 +382,8 @@ pub struct BlockTemplate {
     #[serde(rename = "coinbaseaux")]
     #[serde_as(as = "LinkedHashMapRepr<_, serde_with::hex::Hex>")]
     pub coinbase_aux: LinkedHashMap<String, Vec<u8>>,
-    #[serde(rename = "coinbasevalue")]
-    pub coinbase_value: u64,
+    #[serde(flatten)]
+    pub coinbase_txn_or_value: CoinbaseTxnOrValue,
     /// MUST be omitted if the server does not support long polling
     #[serde(rename = "longpollid")]
     pub long_poll_id: Option<String>,
