@@ -1,5 +1,6 @@
 use std::{
     collections::HashSet,
+    fmt::Debug,
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
@@ -9,6 +10,7 @@ use bitcoin::{
     hashes::{ripemd160::Hash as Ripemd160Hash, sha256::Hash as Sha256Hash, Hash as _},
     BlockHash, Txid, Weight, Wtxid,
 };
+use educe::Educe;
 use hashlink::LinkedHashMap;
 use jsonrpsee::proc_macros::rpc;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -195,20 +197,61 @@ pub struct NetworkInfo {
     pub time_offset_s: i64,
 }
 
+/// Output from `getrawtransaction` where `verbosity = 1`
+#[derive(Clone, Debug, Deserialize)]
+pub struct TxInfo {
+    #[serde(deserialize_with = "hex::serde::deserialize")]
+    pub hex: Vec<u8>,
+    pub txid: Txid,
+    // TODO: add more fields
+}
+
+mod private {
+    pub trait Sealed {}
+}
+
+impl<const BOOL: bool> private::Sealed for BoolWitness<BOOL> {}
+
+pub trait ShowTxDetails: private::Sealed {
+    type Output;
+}
+
+impl ShowTxDetails for BoolWitness<false> {
+    type Output = Txid;
+}
+
+impl ShowTxDetails for BoolWitness<true> {
+    type Output = TxInfo;
+}
+
 #[serde_as]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Block {
+#[derive(Educe)]
+#[educe(
+    Clone(bound(<BoolWitness<SHOW_TX_DETAILS> as ShowTxDetails>::Output: Clone)),
+    Debug(bound(<BoolWitness<SHOW_TX_DETAILS> as ShowTxDetails>::Output: Debug)),
+)]
+#[derive(Deserialize, Serialize)]
+#[serde(
+    bound(
+        deserialize = "for<'des> <BoolWitness<SHOW_TX_DETAILS> as ShowTxDetails>::Output: Deserialize<'des>",
+        serialize = "<BoolWitness<SHOW_TX_DETAILS> as ShowTxDetails>::Output: Serialize"
+    ),
+    rename_all = "camelCase"
+)]
+pub struct Block<const SHOW_TX_DETAILS: bool>
+where
+    BoolWitness<SHOW_TX_DETAILS>: ShowTxDetails,
+{
     pub hash: bitcoin::BlockHash,
     pub confirmations: usize,
     pub strippedsize: usize,
     pub size: usize,
     pub weight: usize,
     pub height: usize,
-    pub version: i32,
+    pub version: bitcoin::block::Version,
     pub version_hex: String,
     pub merkleroot: bitcoin::hash_types::TxMerkleNode,
-    pub tx: Vec<bitcoin::Txid>,
+    pub tx: Vec<<BoolWitness<SHOW_TX_DETAILS> as ShowTxDetails>::Output>,
     pub time: u32,
     pub mediantime: u32,
     pub nonce: u32,
@@ -219,6 +262,27 @@ pub struct Block {
     pub chainwork: String,
     pub previousblockhash: Option<bitcoin::BlockHash>,
     pub nextblockhash: Option<bitcoin::BlockHash>,
+}
+
+impl TryFrom<&Block<true>> for bitcoin::Block {
+    type Error = bitcoin::consensus::encode::Error;
+
+    fn try_from(block: &Block<true>) -> Result<Self, Self::Error> {
+        let header = bitcoin::block::Header {
+            version: block.version,
+            prev_blockhash: block.previousblockhash.unwrap_or_else(BlockHash::all_zeros),
+            merkle_root: block.merkleroot,
+            time: block.time,
+            bits: block.compact_target,
+            nonce: block.nonce,
+        };
+        let txdata = block
+            .tx
+            .iter()
+            .map(|tx_info| bitcoin::consensus::deserialize(&tx_info.hex))
+            .collect::<Result<_, _>>()?;
+        Ok(Self { header, txdata })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -725,7 +789,11 @@ impl GetBlockVerbosity for U8Witness<0> {
 }
 
 impl GetBlockVerbosity for U8Witness<1> {
-    type Response = Block;
+    type Response = Block<false>;
+}
+
+impl GetBlockVerbosity for U8Witness<2> {
+    type Response = Block<true>;
 }
 
 #[rpc(
