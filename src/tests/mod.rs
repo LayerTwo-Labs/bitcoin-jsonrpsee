@@ -10,7 +10,7 @@ use jsonrpsee::{
 fn test_deserialize_getblock_verbose_1() {
     let json_str = include_str!("json/getblock-verbose-1.json");
     let mut json_des = serde_json::Deserializer::from_str(json_str);
-    let res: Response<client::Block> =
+    let res: Response<client::Block<false>> =
         serde_path_to_error::deserialize(&mut json_des).expect("Failed to deserialize block");
     let res: RpcResult<response::Success<_>> = res.try_into();
     assert!(res.is_ok())
