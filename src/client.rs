@@ -390,7 +390,8 @@ pub struct BlockTemplateTransaction {
     // TODO: check that this is the wtxid
     pub hash: Wtxid,
     pub depends: Vec<u32>,
-    pub fee: i64,
+    #[serde(with = "bitcoin::amount::serde::as_sat")]
+    pub fee: bitcoin::SignedAmount,
     pub sigops: Option<u64>,
     pub weight: u64,
 }
