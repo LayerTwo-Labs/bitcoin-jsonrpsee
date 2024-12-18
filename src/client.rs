@@ -247,7 +247,7 @@ where
     pub strippedsize: usize,
     pub size: usize,
     pub weight: usize,
-    pub height: usize,
+    pub height: u32,
     pub version: bitcoin::block::Version,
     pub version_hex: String,
     pub merkleroot: bitcoin::hash_types::TxMerkleNode,
