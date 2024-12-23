@@ -479,10 +479,7 @@ pub struct BlockTemplate {
     #[serde_as(as = "FromInto<CompactTargetRepr>")]
     pub compact_target: bitcoin::CompactTarget,
     pub height: u32,
-
-    #[serde_as(as = "Option<serde_with::hex::Hex>")]
-    pub signet_challenge: Option<Vec<u8>>,
-
+    pub signet_challenge: Option<bitcoin::ScriptBuf>,
     #[serde_as(as = "Option<serde_with::hex::Hex>")]
     pub default_witness_commitment: Option<Vec<u8>>,
 }
