@@ -498,9 +498,9 @@ pub struct AddressInfo {
     #[serde(rename = "iswitness")]
     pub is_witness: bool,
     #[serde(rename = "hdkeypath")]
-    pub hd_key_path: String,
+    pub hd_key_path: Option<String>,
     #[serde(rename = "hdseedid")]
-    pub hd_seed_id: String,
+    pub hd_seed_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
