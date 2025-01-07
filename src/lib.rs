@@ -64,8 +64,6 @@ pub enum Error {
     InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
     #[error("bitcoin consensus encode error")]
     BitcoinConsensusEncode(#[from] bitcoin::consensus::encode::Error),
-    #[error("bitcoin hex error")]
-    BitcoinHex(#[from] hex_conservative::HexToArrayError),
     #[error("hex error")]
     Hex(#[from] hex::FromHexError),
     #[error("no next block for prev_main_hash = {prev_main_hash}")]
