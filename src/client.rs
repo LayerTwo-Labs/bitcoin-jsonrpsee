@@ -626,6 +626,12 @@ pub trait Main {
     #[method(name = "getbestblockhash")]
     async fn getbestblockhash(&self) -> Result<bitcoin::BlockHash, jsonrpsee::core::Error>;
 
+    #[method(name = "getblockhash")]
+    async fn getblockhash(
+        &self,
+        height: usize,
+    ) -> Result<bitcoin::BlockHash, jsonrpsee::core::Error>;
+
     #[method(name = "getblockcount")]
     async fn getblockcount(&self) -> Result<usize, jsonrpsee::core::Error>;
 
