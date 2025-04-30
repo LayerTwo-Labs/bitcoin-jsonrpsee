@@ -243,7 +243,7 @@ where
     BoolWitness<SHOW_TX_DETAILS>: ShowTxDetails,
 {
     pub hash: bitcoin::BlockHash,
-    pub confirmations: usize,
+    pub confirmations: isize, // Confirmations can be negative if block are reorged/invalidated
     pub strippedsize: usize,
     pub size: usize,
     pub weight: usize,
