@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     marker::PhantomData,
     ops::{Deref, DerefMut},
@@ -545,6 +545,12 @@ pub struct SidechainProposal {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct IndexInfo {
+    pub synced: bool,
+    pub best_block_height: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SidechainActivationStatus {
     #[serde(rename = "title")]
     pub name: String,
@@ -653,6 +659,9 @@ pub trait Main {
         account: &str,
         address_type: &str,
     ) -> Result<bitcoin::Address<bitcoin::address::NetworkUnchecked>, jsonrpsee::core::Error>;
+
+    #[method(name = "getindexinfo")]
+    async fn get_index_info(&self) -> Result<HashMap<String, IndexInfo>, jsonrpsee::core::Error>;
 
     #[method(name = "gettxoutsetinfo")]
     async fn gettxoutsetinfo(&self) -> Result<TxOutSetInfo, jsonrpsee::core::Error>;
