@@ -562,6 +562,15 @@ pub struct SidechainActivationStatus {
     pub fail: u32,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct ZMQNotification {
+    #[serde(rename = "type")]
+    notification_type: String,
+    address: String,
+    #[serde(rename = "hwm")]
+    high_water_mark: u32,
+}
+
 #[rpc(client)]
 pub trait Main {
     #[method(name = "countsidechaindeposits")]
@@ -744,6 +753,9 @@ pub trait Main {
         criticalhash: bitcoin::BlockHash,
         nsidechain: u8,
     ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
+
+    #[method(name = "getzmqnotifications")]
+    async fn get_zmq_notifications(&self) -> Result<Vec<ZMQNotification>, jsonrpsee::core::error>;
 }
 
 pub struct U8Witness<const U8: u8>;
