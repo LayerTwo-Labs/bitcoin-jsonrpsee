@@ -563,12 +563,12 @@ pub struct SidechainActivationStatus {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct ZMQNotification {
+pub struct ZMQNotification {
     #[serde(rename = "type")]
-    notification_type: String,
-    address: String,
+    pub notification_type: String,
+    pub address: String,
     #[serde(rename = "hwm")]
-    high_water_mark: u32,
+    pub high_water_mark: u32,
 }
 
 #[rpc(client)]
