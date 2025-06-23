@@ -9,6 +9,19 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test --all-features
+
   lint:
     name: Linting
     runs-on: ubuntu-latest
@@ -45,7 +58,7 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --all-features
+        run: cargo build --release --all-features --examples
 
   security:
     name: Security Audit
