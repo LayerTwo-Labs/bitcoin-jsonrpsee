@@ -5,11 +5,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use bitcoin::{
-    block,
-    hashes::{ripemd160::Hash as Ripemd160Hash, sha256::Hash as Sha256Hash, Hash as _},
-    BlockHash, Txid, Weight, Wtxid,
-};
+use bitcoin::{block, hashes::Hash as _, BlockHash, Txid, Weight, Wtxid};
 use educe::Educe;
 use hashlink::LinkedHashMap;
 use jsonrpsee::proc_macros::rpc;
@@ -31,26 +27,6 @@ pub struct ConsensusEncoded<T, Case = bitcoin::consensus::serde::hex::Lower>(
     #[serde(with = "bitcoin::consensus::serde::With::<bitcoin::consensus::serde::Hex<Case>>")] pub T,
     pub PhantomData<Case>,
 );
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct WithdrawalStatus {
-    hash: bitcoin::Txid,
-    nblocksleft: usize,
-    nworkscore: usize,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct SpentWithdrawal {
-    pub nsidechain: u8,
-    pub hash: bitcoin::Txid,
-    pub hashblock: bitcoin::BlockHash,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct FailedWithdrawal {
-    pub nsidechain: u8,
-    pub hash: bitcoin::Txid,
-}
 
 #[derive(DeserializeFromStr)]
 #[repr(transparent)]
@@ -285,86 +261,6 @@ impl TryFrom<&Block<true>> for bitcoin::Block {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[repr(transparent)]
-#[serde(transparent)]
-pub struct SidechainId(pub u8);
-
-fn deserialize_reverse_hex<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: hex::FromHex,
-    <T as hex::FromHex>::Error: std::fmt::Display,
-{
-    let mut bytes: Vec<u8> = hex::serde::deserialize(deserializer)?;
-    bytes.reverse();
-    T::from_hex(hex::encode(bytes)).map_err(<D::Error as serde::de::Error>::custom)
-}
-
-/// Array item returned by `getblockcommitments`
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(tag = "type")]
-pub enum BlockCommitment {
-    #[serde(rename = "BMM h*")]
-    BmmHStar {
-        #[serde(rename = "h", deserialize_with = "deserialize_reverse_hex")]
-        commitment: [u8; 32],
-        #[serde(rename = "nsidechain")]
-        sidechain_id: SidechainId,
-        #[serde(rename = "prevbytes", deserialize_with = "hex::serde::deserialize")]
-        prev_bytes: [u8; 4],
-    },
-    #[serde(rename = "SCDB update bytes")]
-    ScdbUpdateBytes {
-        // TODO: parse script?
-        script: String,
-    },
-    #[serde(rename = "Sidechain activation ack")]
-    SidechainActivationAck {
-        #[serde(rename = "hash", deserialize_with = "deserialize_reverse_hex")]
-        commitment: [u8; 32],
-    },
-    #[serde(rename = "Sidechain proposal")]
-    SidechainProposal,
-    #[serde(rename = "Withdrawal bundle hash")]
-    WithdrawalBundleHash {
-        #[serde(rename = "hash", deserialize_with = "deserialize_reverse_hex")]
-        commitment: [u8; 32],
-        #[serde(rename = "nsidechain")]
-        sidechain_id: SidechainId,
-    },
-    #[serde(rename = "Witness commitment")]
-    WitnessCommitment {
-        // TODO: parse script?
-        script: String,
-    },
-}
-
-#[derive(Clone, Debug)]
-pub(super) struct BlockCommitments(pub Vec<(u32, BlockCommitment)>);
-
-impl<'de> Deserialize<'de> for BlockCommitments {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Debug, Deserialize)]
-        struct Repr {
-            txout: u32,
-            #[serde(flatten)]
-            commitment: BlockCommitment,
-        }
-
-        impl From<Repr> for (u32, BlockCommitment) {
-            fn from(repr: Repr) -> Self {
-                (repr.txout, repr.commitment)
-            }
-        }
-
-        Vec::<FromInto<Repr>>::deserialize_as(deserializer).map(Self)
-    }
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct BlockTemplateRequest {
     #[serde(default)]
@@ -513,53 +409,10 @@ pub struct BlockchainInfo {
     pub difficulty: f64,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Deposit {
-    pub hashblock: bitcoin::BlockHash,
-    pub nburnindex: usize,
-    pub ntx: usize,
-    pub strdest: String,
-    pub txhex: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct SidechainInfo {
-    #[serde(rename = "title")]
-    pub name: String,
-    #[serde(alias = "nversion")]
-    pub version: i32,
-    pub description: String,
-    #[serde(alias = "hashid1", alias = "hashID1")]
-    pub hash_id_1: Sha256Hash,
-    #[serde(alias = "hashid2", alias = "hashID2")]
-    pub hash_id_2: Ripemd160Hash,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct SidechainProposal {
-    #[serde(rename = "nSidechain")]
-    pub sidechain_id: SidechainId,
-    #[serde(flatten)]
-    pub info: SidechainInfo,
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IndexInfo {
     pub synced: bool,
     pub best_block_height: u32,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct SidechainActivationStatus {
-    #[serde(rename = "title")]
-    pub name: String,
-    pub description: String,
-    #[serde(alias = "nage")]
-    pub age: u32,
-    // TODO: this needs a better name
-    #[serde(alias = "nfail")]
-    pub fail: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -573,37 +426,6 @@ pub struct ZMQNotification {
 
 #[rpc(client)]
 pub trait Main {
-    #[method(name = "countsidechaindeposits")]
-    async fn count_sidechain_deposits(&self, nsidechain: u8)
-        -> Result<u32, jsonrpsee::core::Error>;
-
-    #[method(name = "createbmmcriticaldatatx")]
-    async fn createbmmcriticaldatatx(
-        &self,
-        amount: AmountBtc,
-        height: u32,
-        criticalhash: &bitcoin::BlockHash,
-        nsidechain: u8,
-        prevbytes: &str,
-    ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
-
-    #[method(name = "createsidechaindeposit")]
-    async fn createsidechaindeposit(
-        &self,
-        nsidechain: u8,
-        depositaddress: &str,
-        amount: AmountBtc,
-        fee: AmountBtc,
-    ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
-
-    #[method(name = "createsidechainproposal")]
-    async fn create_sidechain_proposal(
-        &self,
-        nsidechain: u8,
-        sidechain_name: &str,
-        sidechain_description: &str,
-    ) -> Result<SidechainProposal, jsonrpsee::core::Error>;
-
     #[method(name = "generate")]
     async fn generate(&self, num: u32) -> Result<serde_json::Value, jsonrpsee::core::Error>;
 
@@ -613,12 +435,6 @@ pub trait Main {
         n_blocks: u32,
         address: &bitcoin::Address<bitcoin::address::NetworkUnchecked>,
     ) -> Result<Vec<BlockHash>, jsonrpsee::core::Error>;
-
-    #[method(name = "getblockcommitments")]
-    async fn get_block_commitments(
-        &self,
-        blockhash: bitcoin::BlockHash,
-    ) -> Result<BlockCommitments, jsonrpsee::core::Error>;
 
     #[method(name = "getblocktemplate")]
     async fn get_block_template(
@@ -681,54 +497,12 @@ pub trait Main {
         block_hash: bitcoin::BlockHash,
     ) -> Result<(), jsonrpsee::core::Error>;
 
-    #[method(name = "listactivesidechains")]
-    async fn list_active_sidechains(
-        &self,
-    ) -> Result<Vec<serde_json::Value>, jsonrpsee::core::Error>;
-
-    #[method(name = "listsidechainactivationstatus")]
-    async fn list_sidechain_activation_status(
-        &self,
-    ) -> Result<Vec<SidechainActivationStatus>, jsonrpsee::core::Error>;
-
-    #[method(name = "listsidechainproposals")]
-    async fn list_sidechain_proposals(&self) -> Result<Vec<SidechainInfo>, jsonrpsee::core::Error>;
-
-    #[method(name = "listfailedwithdrawals")]
-    async fn listfailedwithdrawals(&self) -> Result<Vec<FailedWithdrawal>, jsonrpsee::core::Error>;
-
-    #[method(name = "listsidechaindepositsbyblock")]
-    async fn listsidechaindepositsbyblock(
-        &self,
-        nsidechain: u8,
-        end_blockhash: Option<bitcoin::BlockHash>,
-        start_blockhash: Option<bitcoin::BlockHash>,
-    ) -> Result<Vec<Deposit>, jsonrpsee::core::Error>;
-
-    #[method(name = "listspentwithdrawals")]
-    async fn listspentwithdrawals(&self) -> Result<Vec<SpentWithdrawal>, jsonrpsee::core::Error>;
-
-    // FIXME: Define a "Deposit Address" type.
-    #[method(name = "listwithdrawalstatus")]
-    async fn listwithdrawalstatus(
-        &self,
-        nsidechain: u8,
-    ) -> Result<Vec<WithdrawalStatus>, jsonrpsee::core::Error>;
-
     #[method(name = "prioritisetransaction", param_kind = map)]
     async fn prioritize_transaction(
         &self,
         txid: Txid,
         fee_delta: i64,
     ) -> Result<bool, jsonrpsee::core::Error>;
-
-    #[method(name = "receivewithdrawalbundle")]
-    async fn receivewithdrawalbundle(
-        &self,
-        nsidechain: u8,
-        // Raw transaction hex.
-        rawtx: &str,
-    ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
 
     // Max fee rate: BTC/kvB value
     // Max burn amount: BTC value
@@ -745,14 +519,6 @@ pub trait Main {
 
     #[method(name = "submitblock")]
     async fn submit_block(&self, block_hex: String) -> Result<(), jsonrpsee::core::Error>;
-
-    #[method(name = "verifybmm")]
-    async fn verifybmm(
-        &self,
-        blockhash: bitcoin::BlockHash,
-        criticalhash: bitcoin::BlockHash,
-        nsidechain: u8,
-    ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
 
     #[method(name = "getzmqnotifications")]
     async fn get_zmq_notifications(&self) -> Result<Vec<ZMQNotification>, jsonrpsee::core::error>;
@@ -975,14 +741,6 @@ where
         block_hash: Option<bitcoin::BlockHash>,
     ) -> Result<<T as GetRawTransactionVerbosity>::Response, jsonrpsee::core::Error>;
 }
-
-// Arguments:
-// 1. "amount"         (numeric or string, required) The amount in BTC to be spent.
-// 2. "height"         (numeric, required) The block height this transaction must be included in.
-// Note: If 0 is passed in for height, current block height will be used
-// 3. "criticalhash"   (string, required) h* you want added to a coinbase
-// 4. "nsidechain"     (numeric, required) Sidechain requesting BMM
-// 5. "prevbytes"      (string, required) a portion of the previous block hash
 
 // FIXME: Make mainchain API machine friendly. Parsing human readable amounts
 // here is stupid -- just take and return values in satoshi.
