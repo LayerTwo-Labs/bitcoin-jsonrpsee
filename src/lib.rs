@@ -1,3 +1,17 @@
+//! # Bitcoin JSON-RPC Client
+//!
+//! A Rust library for interacting with Bitcoin Core via JSON-RPC.
+//!
+//! ## Usage Example  
+//!
+//! Example that illustrates basic usage of the library as well as how
+//! to do batched requests (multiple requests + responses over a single
+//! network roundtrip).
+//!
+//! ```rust,no_run
+#![doc = include_str!("../examples/batch_requests.rs")]
+//! ```
+
 use base64::Engine as _;
 use http::HeaderValue;
 use jsonrpsee::http_client::{HeaderMap, HttpClient, HttpClientBuilder};
