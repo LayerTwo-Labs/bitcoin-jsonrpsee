@@ -517,8 +517,13 @@ pub trait Main {
     #[method(name = "stop")]
     async fn stop(&self) -> Result<String, jsonrpsee::core::Error>;
 
+    /// Returns None if the block is invalid, otherwise the error code describing why the
+    /// block was rejected.
     #[method(name = "submitblock")]
-    async fn submit_block(&self, block_hex: String) -> Result<(), jsonrpsee::core::Error>;
+    async fn submit_block(
+        &self,
+        block_hex: String,
+    ) -> Result<Option<String>, jsonrpsee::core::Error>;
 
     #[method(name = "getzmqnotifications")]
     async fn get_zmq_notifications(&self) -> Result<Vec<ZMQNotification>, jsonrpsee::core::error>;
