@@ -71,7 +71,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-deny
-        run: cargo install --locked cargo-deny
+        run: cargo install --locked cargo-deny@0.18.3
 
       - name: Run cargo deny
         run: cargo deny check
