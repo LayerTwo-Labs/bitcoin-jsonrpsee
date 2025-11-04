@@ -102,6 +102,24 @@ impl From<Header> for bitcoin::block::Header {
     }
 }
 
+#[serde_as]
+#[derive(Clone, Debug, Deserialize)]
+pub struct MiningInfoNext {
+    pub height: u32,
+    #[serde_as(as = "FromInto<CompactTargetRepr>")]
+    pub bits: bitcoin::CompactTarget,
+    pub difficulty: f64,
+    pub target: bitcoin::Target,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct MiningInfo {
+    #[serde(with = "bitcoin::network::as_core_arg")]
+    pub chain: bitcoin::Network,
+    pub signet_challenge: Option<bitcoin::ScriptBuf>,
+    pub next: MiningInfoNext,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub struct RawMempoolTxFees {
     pub base: u64,
@@ -450,6 +468,9 @@ pub trait Main {
 
     #[method(name = "getblockchaininfo")]
     async fn get_blockchain_info(&self) -> Result<BlockchainInfo, jsonrpsee::core::Error>;
+
+    #[method(name = "getmininginfo")]
+    async fn get_mining_info(&self) -> Result<MiningInfo, jsonrpsee::core::Error>;
 
     #[method(name = "getmempoolentry")]
     async fn get_mempool_entry(
