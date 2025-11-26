@@ -417,7 +417,17 @@ pub struct AddressInfo {
     pub hd_seed_id: Option<String>,
 }
 
+/// Additional blockchain info, present after v29
 #[serde_as]
+#[derive(Debug, Deserialize)]
+pub struct BlockchainInfoV29 {
+    #[serde(rename = "bits")]
+    #[serde_as(as = "FromInto<CompactTargetRepr>")]
+    pub compact_target: bitcoin::CompactTarget,
+    #[serde_as(as = "serde_with::hex::Hex")]
+    pub target: [u8; 32],
+}
+
 #[derive(Debug, Deserialize)]
 pub struct BlockchainInfo {
     #[serde(with = "bitcoin::network::as_core_arg")]
@@ -426,11 +436,8 @@ pub struct BlockchainInfo {
     #[serde(rename = "bestblockhash")]
     pub best_blockhash: bitcoin::BlockHash,
     pub difficulty: f64,
-    #[serde(rename = "bits")]
-    #[serde_as(as = "FromInto<CompactTargetRepr>")]
-    pub compact_target: bitcoin::CompactTarget,
-    #[serde_as(as = "serde_with::hex::Hex")]
-    pub target: [u8; 32],
+    #[serde(flatten)]
+    pub v29_info: Option<BlockchainInfoV29>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
