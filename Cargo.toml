@@ -10,7 +10,7 @@ publish = false
 [dependencies]
 base64 = "0.22.1"
 bitcoin = { version = "0.32.2", features = ["serde"] }
-hashlink = { version = "0.10.0", features = ["serde_impl"] }
+hashlink = { version = "0.11.0", features = ["serde_impl"] }
 hex = { version = "0.4.3", features = ["serde"] }
 http = "1.1.0"
 jsonrpsee = { version = "0.26.0", features = ["client", "macros"] }
