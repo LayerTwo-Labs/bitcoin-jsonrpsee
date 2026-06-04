@@ -117,7 +117,7 @@ pub struct MiningInfo {
     #[serde(with = "bitcoin::network::as_core_arg")]
     pub chain: bitcoin::Network,
     pub signet_challenge: Option<bitcoin::ScriptBuf>,
-    pub next: MiningInfoNext,
+    pub next: Option<MiningInfoNext>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
