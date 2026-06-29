@@ -70,7 +70,6 @@ feature-depth = 1
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 ignore = [
-    { id = "RUSTSEC-2024-0402", reason = "hashbrown vulnerability in dependencies we can't easily control" },
     { id = "RUSTSEC-2025-0009", reason = "ring vulnerability in dependencies we can't easily control" },
 ]
 # If this is true, then cargo deny will use the git executable to fetch advisory database.
@@ -96,7 +95,6 @@ allow = [
     "MITNFA",
     "OpenSSL",
     "Unicode-3.0",
-    "Unicode-DFS-2016",
 ]
 # The confidence threshold for detecting a license from license text.
 # The higher the value, the more closely the license text must be to the
