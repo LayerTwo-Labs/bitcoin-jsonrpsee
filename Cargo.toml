@@ -21,7 +21,7 @@ thiserror = "2.0.9"
 tracing = { version = "0.1.40", optional = true }
 
 [dependencies.educe]
-version = "0.6.0"
+version = "0.7.4"
 default-features = false
 features = ["Clone", "Debug"]
 
