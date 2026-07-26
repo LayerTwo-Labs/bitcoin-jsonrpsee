@@ -285,6 +285,16 @@ pub struct BlockTemplateRequest {
     pub rules: Vec<String>,
     #[serde(default)]
     pub capabilities: HashSet<String>,
+    /// BIP22 long polling: the `longpollid` from a previous template response.
+    /// A server that supports long polling holds the request open until that
+    /// template is stale (e.g. the chain tip changed), then responds with a
+    /// fresh template.
+    #[serde(
+        default,
+        rename = "longpollid",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub long_poll_id: Option<String>,
 }
 
 impl Default for BlockTemplateRequest {
@@ -292,6 +302,7 @@ impl Default for BlockTemplateRequest {
         Self {
             rules: vec!["segwit".into()],
             capabilities: HashSet::new(),
+            long_poll_id: None,
         }
     }
 }
