@@ -67,3 +67,19 @@ fn test_deserialize_getnetworkinfo() {
     let res: RpcResult<response::Success<_>> = res.try_into();
     assert!(res.is_ok())
 }
+
+#[test]
+// Test deserializing a result from `getmempoolentry`, captured from Core
+// v31.0.0. The fees are reported in BTC, and the replaceability field is
+// spelled with a hyphen -- getting either wrong made every entry, for every
+// caller, fail to deserialize.
+fn test_deserialize_getmempoolentry() {
+    let json_str = include_str!("json/getmempoolentry.json");
+    let mut json_des = serde_json::Deserializer::from_str(json_str);
+    let res: Response<client::RawMempoolTxInfo> = serde_path_to_error::deserialize(&mut json_des)
+        .expect("Failed to deserialize mempool entry");
+    let res: RpcResult<response::Success<_>> = res.try_into();
+    let entry = res.expect("Expected to deserialize as ok success").result;
+    assert_eq!(entry.fees.base, bitcoin::Amount::from_sat(6_160_000));
+    assert!(entry.bip125_replaceable);
+}

@@ -120,12 +120,17 @@ pub struct MiningInfo {
     pub next: MiningInfoNext,
 }
 
+/// Core reports these in BTC, not satoshi.
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub struct RawMempoolTxFees {
-    pub base: u64,
-    pub modified: u64,
-    pub ancestor: u64,
-    pub descendant: u64,
+    #[serde(with = "bitcoin::amount::serde::as_btc")]
+    pub base: bitcoin::Amount,
+    #[serde(with = "bitcoin::amount::serde::as_btc")]
+    pub modified: bitcoin::Amount,
+    #[serde(with = "bitcoin::amount::serde::as_btc")]
+    pub ancestor: bitcoin::Amount,
+    #[serde(with = "bitcoin::amount::serde::as_btc")]
+    pub descendant: bitcoin::Amount,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -145,7 +150,7 @@ pub struct RawMempoolTxInfo {
     pub depends: Vec<Txid>,
     #[serde(rename = "spentby")]
     pub spent_by: Vec<Txid>,
-    #[serde(rename = "bip125replaceable")]
+    #[serde(rename = "bip125-replaceable")]
     pub bip125_replaceable: bool,
     pub unbroadcast: bool,
 }
