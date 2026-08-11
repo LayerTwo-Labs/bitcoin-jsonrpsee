@@ -83,3 +83,29 @@ fn test_deserialize_getmempoolentry() {
     assert_eq!(entry.fees.base, bitcoin::Amount::from_sat(6_160_000));
     assert!(entry.bip125_replaceable);
 }
+
+#[test]
+fn test_deserialize_getrawmempool_verbose() {
+    let json_str = include_str!("json/getrawmempool-verbose.json");
+    let mut json_des = serde_json::Deserializer::from_str(json_str);
+    let res: Response<client::RawMempoolVerbose> = serde_path_to_error::deserialize(&mut json_des)
+        .expect("Failed to deserialize verbose mempool");
+    let res: RpcResult<response::Success<_>> = res.try_into();
+    let entries = res.expect("expected a success response").result.entries;
+    assert_eq!(entries.len(), 2);
+    let (_, info) = &entries[0];
+    assert_eq!(info.fees.base, bitcoin::Amount::from_sat(35_250));
+}
+
+#[test]
+fn test_deserialize_getrawmempool_sequence() {
+    let json_str = include_str!("json/getrawmempool-sequence.json");
+    let mut json_des = serde_json::Deserializer::from_str(json_str);
+    let res: Response<client::RawMempoolWithSequence> =
+        serde_path_to_error::deserialize(&mut json_des)
+            .expect("Failed to deserialize mempool with sequence");
+    let res: RpcResult<response::Success<_>> = res.try_into();
+    let mempool = res.expect("expected a success response").result;
+    assert_eq!(mempool.txids.len(), 3);
+    assert_eq!(mempool.mempool_sequence, 38_668_365);
+}
