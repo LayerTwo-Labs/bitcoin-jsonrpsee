@@ -161,8 +161,13 @@ pub struct RawMempoolWithSequence {
     pub mempool_sequence: u64,
 }
 
+/// `getrawmempool verbose=true`.
+//
+// Core returns the entries as a bare JSON object keyed by txid with no
+// wrapper.
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
+#[serde(transparent)]
 pub struct RawMempoolVerbose {
     #[serde_as(as = "Map<_, _>")]
     pub entries: Vec<(Txid, RawMempoolTxInfo)>,
@@ -700,6 +705,8 @@ pub trait GetRawMempoolResponse {
     type Response: DeserializeOwned;
 }
 
+// There is deliberately no impl for `<Verbose = true, MempoolSequence = true>`.
+// Core rejects that combination.
 impl GetRawMempoolResponse for GetRawMempoolParams<BoolWitness<false>, BoolWitness<false>> {
     type Response = Vec<Txid>;
 }
