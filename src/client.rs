@@ -294,6 +294,26 @@ impl TryFrom<&Block<true>> for bitcoin::Block {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct BlockTemplateRequest {
+    /// BIP22/BIP23 `mode`. Absent, or JSON null, is equivalent to
+    /// `"template"`. Read it through [`BlockTemplateRequest::mode`].
+    ///
+    /// Deliberately untyped. An unrecognised mode, and a `mode` that is not a
+    /// string at all, are both `Invalid mode` errors in Bitcoin Core. Typing
+    /// this as an enum or a `String` would instead fail deserialization and
+    /// report the whole params object as malformed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<JsonValue>,
+    /// BIP23 block proposal: the hex-encoded block to validate. Required when
+    /// `mode` is `"proposal"`, ignored otherwise. Read it through
+    /// [`BlockTemplateRequest::data`].
+    ///
+    /// Left as hex rather than a decoded block so that undecodable data can be
+    /// reported as its own error, the way Bitcoin Core does. Untyped for the
+    /// same reason as `mode`: Core tests it with `isStr()`, so a `data` that
+    /// is present but not a string is the same error as an absent one, not
+    /// malformed params.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<JsonValue>,
     #[serde(default)]
     pub rules: Vec<String>,
     #[serde(default)]
@@ -310,15 +330,65 @@ pub struct BlockTemplateRequest {
     pub long_poll_id: Option<String>,
 }
 
+/// `mode` was present but was not a JSON string.
+///
+/// Bitcoin Core reports this exactly as it reports an unrecognised mode, so
+/// callers should map it to the same error.
+///
+/// <https://github.com/bitcoin/bitcoin/blob/6c4fe401e908cff1b67d80035b117aae15fe7db6/src/rpc/mining.cpp#L726>
+#[derive(Clone, Copy, Debug, thiserror::Error)]
+#[error("Invalid mode")]
+pub struct InvalidMode;
+
+impl BlockTemplateRequest {
+    /// BIP22/BIP23 mode, defaulting to `"template"` when absent or null.
+    ///
+    /// Mirrors Core's `isStr()` / `isNull()` / else split, and an unrecognised
+    /// string is the caller's to reject, the same way Core does further down.
+    ///
+    /// <https://github.com/bitcoin/bitcoin/blob/6c4fe401e908cff1b67d80035b117aae15fe7db6/src/rpc/mining.cpp#L718-L726>
+    /// <https://github.com/bitcoin/bitcoin/blob/6c4fe401e908cff1b67d80035b117aae15fe7db6/src/rpc/mining.cpp#L763>
+    pub fn mode(&self) -> Result<&str, InvalidMode> {
+        match &self.mode {
+            None | Some(JsonValue::Null) => Ok(MODE_TEMPLATE),
+            Some(JsonValue::String(mode)) => Ok(mode),
+            Some(_) => Err(InvalidMode),
+        }
+    }
+
+    /// BIP23 proposal `data`, as a hex string.
+    ///
+    /// `None` when absent *or* when present as some other JSON type: Bitcoin
+    /// Core tests it with `isStr()` and reports both identically, so there is
+    /// nothing for a caller to tell apart.
+    ///
+    /// <https://github.com/bitcoin/bitcoin/blob/6c4fe401e908cff1b67d80035b117aae15fe7db6/src/rpc/mining.cpp#L731-L733>
+    pub fn data(&self) -> Option<&str> {
+        match &self.data {
+            Some(JsonValue::String(data)) => Some(data),
+            _ => None,
+        }
+    }
+}
+
 impl Default for BlockTemplateRequest {
     fn default() -> Self {
         Self {
+            mode: None,
+            data: None,
             rules: vec!["segwit".into()],
             capabilities: HashSet::new(),
             long_poll_id: None,
         }
     }
 }
+
+/// The default `getblocktemplate` mode: build and return a new template.
+pub const MODE_TEMPLATE: &str = "template";
+
+/// BIP23 block proposal mode: validate the submitted block instead of building
+/// a template.
+pub const MODE_PROPOSAL: &str = "proposal";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BlockTemplateTransaction {
@@ -381,6 +451,8 @@ pub enum CoinbaseTxnOrValue {
 #[serde_as]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BlockTemplate {
+    #[serde(default)]
+    pub capabilities: Vec<String>,
     pub version: block::Version,
     pub rules: Vec<String>,
     #[serde(rename = "vbavailable")]
