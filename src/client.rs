@@ -121,16 +121,19 @@ pub struct MiningInfo {
 }
 
 /// Core reports these in BTC, not satoshi.
+///
+/// All fields except `base` include `prioritisetransaction` deltas, which can
+/// be negative.
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub struct RawMempoolTxFees {
     #[serde(with = "bitcoin::amount::serde::as_btc")]
     pub base: bitcoin::Amount,
     #[serde(with = "bitcoin::amount::serde::as_btc")]
-    pub modified: bitcoin::Amount,
+    pub modified: bitcoin::SignedAmount,
     #[serde(with = "bitcoin::amount::serde::as_btc")]
-    pub ancestor: bitcoin::Amount,
+    pub ancestor: bitcoin::SignedAmount,
     #[serde(with = "bitcoin::amount::serde::as_btc")]
-    pub descendant: bitcoin::Amount,
+    pub descendant: bitcoin::SignedAmount,
 }
 
 #[derive(Clone, Debug, Deserialize)]
