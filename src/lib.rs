@@ -2,11 +2,12 @@ use std::net::SocketAddr;
 
 use base64::Engine as _;
 use http::HeaderValue;
-use jsonrpsee::http_client::{HeaderMap, HttpClient, HttpClientBuilder};
+use jsonrpsee_http_client::{HeaderMap, HttpClient, HttpClientBuilder};
 
 pub use bitcoin;
 pub use client::MainClient;
 pub use jsonrpsee;
+pub use jsonrpsee_http_client as http_client;
 
 pub mod client;
 
