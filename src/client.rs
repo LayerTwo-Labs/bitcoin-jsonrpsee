@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    fmt::Debug,
+    fmt::{self, Debug},
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
@@ -9,9 +9,11 @@ use bitcoin::{block, hashes::Hash as _, BlockHash, Txid, Weight, Wtxid};
 use educe::Educe;
 use hashlink::LinkedHashMap;
 use jsonrpsee::proc_macros::rpc;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{
+    de::{DeserializeOwned, Error as _, MapAccess, Visitor},
+    Deserialize, Deserializer, Serialize,
+};
 use serde_json::Value as JsonValue;
-use serde_with::{serde_as, DeserializeAs, DeserializeFromStr, FromInto, Map, SerializeAs};
 
 /// Wrapper for consensus (de)serializing from hex
 #[derive(Debug, Deserialize, Serialize)]
@@ -28,40 +30,127 @@ pub struct ConsensusEncoded<T, Case = bitcoin::consensus::serde::hex::Lower>(
     pub PhantomData<Case>,
 );
 
-#[derive(DeserializeFromStr)]
-#[repr(transparent)]
-struct CompactTargetRepr(bitcoin::CompactTarget);
+/// (De)serializes a [`bitcoin::CompactTarget`] as unprefixed big-endian hex,
+/// e.g. `"207fffff"`.
+mod compact_target_hex {
+    use serde::{de::Error as _, Deserialize as _, Deserializer, Serializer};
 
-impl std::str::FromStr for CompactTargetRepr {
-    type Err = bitcoin::error::UnprefixedHexError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        bitcoin::CompactTarget::from_unprefixed_hex(s).map(Self)
-    }
-}
-
-impl Serialize for CompactTargetRepr {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(target: &bitcoin::CompactTarget, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
-        hex::serde::serialize(self.0.to_consensus().to_be_bytes(), serializer)
+        hex::serde::serialize(target.to_consensus().to_be_bytes(), serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<bitcoin::CompactTarget, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let hex = String::deserialize(deserializer)?;
+        bitcoin::CompactTarget::from_unprefixed_hex(&hex).map_err(D::Error::custom)
     }
 }
 
-impl From<CompactTargetRepr> for bitcoin::CompactTarget {
-    fn from(repr: CompactTargetRepr) -> Self {
-        repr.0
+/// Like [`hex::serde`], for an optional value.
+mod option_hex {
+    use serde::{de::Error as _, Deserialize as _, Deserializer, Serialize as _, Serializer};
+
+    pub fn serialize<S>(value: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        value.as_ref().map(hex::encode).serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Option::<String>::deserialize(deserializer)?
+            .map(hex::decode)
+            .transpose()
+            .map_err(D::Error::custom)
     }
 }
 
-impl From<bitcoin::CompactTarget> for CompactTargetRepr {
-    fn from(target: bitcoin::CompactTarget) -> Self {
-        Self(target)
+/// (De)serializes a map with hex-encoded values, keeping the order of entries.
+mod hex_values {
+    use hashlink::LinkedHashMap;
+    use serde::{de::Error as _, Deserialize as _, Deserializer, Serializer};
+
+    pub fn serialize<S>(
+        map: &LinkedHashMap<String, Vec<u8>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_map(map.iter().map(|(key, value)| (key, hex::encode(value))))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<LinkedHashMap<String, Vec<u8>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        LinkedHashMap::<String, String>::deserialize(deserializer)?
+            .into_iter()
+            .map(|(key, value)| hex::decode(value).map(|value| (key, value)))
+            .collect::<Result<_, _>>()
+            .map_err(D::Error::custom)
     }
 }
 
-#[serde_as]
+/// Deserializes a map into its entries, in order.
+fn deserialize_entries<'de, D, K, V>(deserializer: D) -> Result<Vec<(K, V)>, D::Error>
+where
+    D: Deserializer<'de>,
+    K: Deserialize<'de>,
+    V: Deserialize<'de>,
+{
+    struct EntriesVisitor<K, V>(PhantomData<(K, V)>);
+
+    impl<'de, K, V> Visitor<'de> for EntriesVisitor<K, V>
+    where
+        K: Deserialize<'de>,
+        V: Deserialize<'de>,
+    {
+        type Value = Vec<(K, V)>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a map")
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+        {
+            let mut entries = Vec::new();
+            while let Some(entry) = map.next_entry()? {
+                entries.push(entry);
+            }
+            Ok(entries)
+        }
+    }
+
+    deserializer.deserialize_map(EntriesVisitor(PhantomData))
+}
+
+/// Deserializes a value that must equal `expected`.
+fn deserialize_exact<'de, D, T>(deserializer: D, expected: T) -> Result<(), D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de> + PartialEq + fmt::Display,
+{
+    let value = T::deserialize(deserializer)?;
+    if value == expected {
+        Ok(())
+    } else {
+        Err(D::Error::custom(format!(
+            "invalid value `{value}`, expected `{expected}`"
+        )))
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Header {
     pub hash: BlockHash,
@@ -72,7 +161,7 @@ pub struct Header {
     #[serde(rename = "merkleroot")]
     pub merkle_root: bitcoin::TxMerkleNode,
     pub time: u32,
-    #[serde_as(as = "FromInto<CompactTargetRepr>")]
+    #[serde(with = "compact_target_hex")]
     pub bits: bitcoin::CompactTarget,
     pub nonce: u32,
 }
@@ -102,11 +191,10 @@ impl From<Header> for bitcoin::block::Header {
     }
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 pub struct MiningInfoNext {
     pub height: u32,
-    #[serde_as(as = "FromInto<CompactTargetRepr>")]
+    #[serde(with = "compact_target_hex")]
     pub bits: bitcoin::CompactTarget,
     pub difficulty: f64,
     pub target: bitcoin::Target,
@@ -168,11 +256,10 @@ pub struct RawMempoolWithSequence {
 //
 // Core returns the entries as a bare JSON object keyed by txid with no
 // wrapper.
-#[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(transparent)]
 pub struct RawMempoolVerbose {
-    #[serde_as(as = "Map<_, _>")]
+    #[serde(deserialize_with = "deserialize_entries")]
     pub entries: Vec<(Txid, RawMempoolTxInfo)>,
 }
 
@@ -231,7 +318,6 @@ impl ShowTxDetails for BoolWitness<true> {
     type Output = TxInfo;
 }
 
-#[serde_as]
 #[derive(Educe)]
 #[educe(
     Clone(bound(<BoolWitness<SHOW_TX_DETAILS> as ShowTxDetails>::Output: Clone)),
@@ -263,7 +349,7 @@ where
     pub mediantime: u32,
     pub nonce: u32,
     #[serde(rename = "bits")]
-    #[serde_as(as = "FromInto<CompactTargetRepr>")]
+    #[serde(with = "compact_target_hex")]
     pub compact_target: bitcoin::CompactTarget,
     pub difficulty: f64,
     pub chainwork: String,
@@ -404,41 +490,6 @@ pub struct BlockTemplateTransaction {
     pub weight: u64,
 }
 
-/// Representation used with serde_with
-#[derive(Clone, Copy, Debug, Default)]
-struct LinkedHashMapRepr<K, V>(PhantomData<(K, V)>);
-
-impl<'de, K0, K1, V0, V1> DeserializeAs<'de, LinkedHashMap<K1, V1>> for LinkedHashMapRepr<K0, V0>
-where
-    K0: DeserializeAs<'de, K1>,
-    K1: Eq + std::hash::Hash,
-    V0: DeserializeAs<'de, V1>,
-{
-    fn deserialize_as<D>(deserializer: D) -> Result<LinkedHashMap<K1, V1>, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        <serde_with::Map<K0, V0> as DeserializeAs<'de, Vec<(K1, V1)>>>::deserialize_as(deserializer)
-            .map(LinkedHashMap::from_iter)
-    }
-}
-
-impl<K0, K1, V0, V1> SerializeAs<LinkedHashMap<K1, V1>> for LinkedHashMapRepr<K0, V0>
-where
-    K0: SerializeAs<K1>,
-    V0: SerializeAs<V1>,
-{
-    fn serialize_as<S>(source: &LinkedHashMap<K1, V1>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        <serde_with::Map<&K0, &V0> as SerializeAs<Vec<(&K1, &V1)>>>::serialize_as(
-            &Vec::from_iter(source),
-            serializer,
-        )
-    }
-}
-
 /// `coinbasetxn` or `coinbasevalue` field
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum CoinbaseTxnOrValue {
@@ -448,7 +499,6 @@ pub enum CoinbaseTxnOrValue {
     ValueSats(u64),
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BlockTemplate {
     #[serde(default)]
@@ -463,19 +513,19 @@ pub struct BlockTemplate {
     pub prev_blockhash: bitcoin::BlockHash,
     pub transactions: Vec<BlockTemplateTransaction>,
     #[serde(rename = "coinbaseaux")]
-    #[serde_as(as = "LinkedHashMapRepr<_, serde_with::hex::Hex>")]
+    #[serde(with = "hex_values")]
     pub coinbase_aux: LinkedHashMap<String, Vec<u8>>,
     #[serde(flatten)]
     pub coinbase_txn_or_value: CoinbaseTxnOrValue,
     /// MUST be omitted if the server does not support long polling
     #[serde(rename = "longpollid")]
     pub long_poll_id: Option<String>,
-    #[serde_as(as = "serde_with::hex::Hex")]
+    #[serde(with = "hex::serde")]
     pub target: [u8; 32],
     pub mintime: u64,
     pub mutable: Vec<String>,
     #[serde(rename = "noncerange")]
-    #[serde_as(as = "serde_with::hex::Hex")]
+    #[serde(with = "hex::serde")]
     pub nonce_range: [u8; 8],
     #[serde(rename = "sigoplimit")]
     pub sigop_limit: u64,
@@ -486,11 +536,11 @@ pub struct BlockTemplate {
     #[serde(rename = "curtime")]
     pub current_time: u64,
     #[serde(rename = "bits")]
-    #[serde_as(as = "FromInto<CompactTargetRepr>")]
+    #[serde(with = "compact_target_hex")]
     pub compact_target: bitcoin::CompactTarget,
     pub height: u32,
     pub signet_challenge: Option<bitcoin::ScriptBuf>,
-    #[serde_as(as = "Option<serde_with::hex::Hex>")]
+    #[serde(default, with = "option_hex")]
     pub default_witness_commitment: Option<Vec<u8>>,
 }
 
@@ -514,13 +564,12 @@ pub struct AddressInfo {
 }
 
 /// Additional blockchain info, present after v29
-#[serde_as]
 #[derive(Debug, Deserialize)]
 pub struct BlockchainInfoV29 {
     #[serde(rename = "bits")]
-    #[serde_as(as = "FromInto<CompactTargetRepr>")]
+    #[serde(with = "compact_target_hex")]
     pub compact_target: bitcoin::CompactTarget,
-    #[serde_as(as = "serde_with::hex::Hex")]
+    #[serde(with = "hex::serde")]
     pub target: [u8; 32],
 }
 
@@ -675,10 +724,7 @@ impl<'de> Deserialize<'de> for U8Witness<0> {
     where
         D: serde::Deserializer<'de>,
     {
-        #[derive(Debug, Deserialize)]
-        struct Repr(monostate::MustBe!(0));
-        let _ = Repr::deserialize(deserializer)?;
-        Ok(Self)
+        deserialize_exact(deserializer, 0u8).map(|()| Self)
     }
 }
 
@@ -687,10 +733,7 @@ impl<'de> Deserialize<'de> for U8Witness<1> {
     where
         D: serde::Deserializer<'de>,
     {
-        #[derive(Debug, Deserialize)]
-        struct Repr(monostate::MustBe!(1));
-        let _ = Repr::deserialize(deserializer)?;
-        Ok(Self)
+        deserialize_exact(deserializer, 1u8).map(|()| Self)
     }
 }
 
@@ -699,10 +742,7 @@ impl<'de> Deserialize<'de> for U8Witness<2> {
     where
         D: serde::Deserializer<'de>,
     {
-        #[derive(Debug, Deserialize)]
-        struct Repr(monostate::MustBe!(2));
-        let _ = Repr::deserialize(deserializer)?;
-        Ok(Self)
+        deserialize_exact(deserializer, 2u8).map(|()| Self)
     }
 }
 
@@ -755,10 +795,7 @@ impl<'de> Deserialize<'de> for BoolWitness<false> {
     where
         D: serde::Deserializer<'de>,
     {
-        #[derive(Debug, Deserialize)]
-        struct Repr(monostate::MustBe!(false));
-        let _ = Repr::deserialize(deserializer)?;
-        Ok(Self)
+        deserialize_exact(deserializer, false).map(|()| Self)
     }
 }
 
@@ -767,10 +804,7 @@ impl<'de> Deserialize<'de> for BoolWitness<true> {
     where
         D: serde::Deserializer<'de>,
     {
-        #[derive(Debug, Deserialize)]
-        struct Repr(monostate::MustBe!(true));
-        let _ = Repr::deserialize(deserializer)?;
-        Ok(Self)
+        deserialize_exact(deserializer, true).map(|()| Self)
     }
 }
 
@@ -842,10 +876,7 @@ impl<'de> Deserialize<'de> for GetRawTransactionVerbose<false> {
     where
         D: serde::Deserializer<'de>,
     {
-        #[derive(Debug, Deserialize)]
-        struct Repr(monostate::MustBe!(false));
-        let _ = Repr::deserialize(deserializer)?;
-        Ok(Self)
+        deserialize_exact(deserializer, false).map(|()| Self)
     }
 }
 
@@ -858,10 +889,7 @@ impl<'de> Deserialize<'de> for GetRawTransactionVerbose<true> {
     where
         D: serde::Deserializer<'de>,
     {
-        #[derive(Debug, Deserialize)]
-        struct Repr(monostate::MustBe!(true));
-        let _ = Repr::deserialize(deserializer)?;
-        Ok(Self)
+        deserialize_exact(deserializer, true).map(|()| Self)
     }
 }
 
