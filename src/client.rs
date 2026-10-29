@@ -241,8 +241,8 @@ pub struct RawMempoolTxInfo {
     pub depends: Vec<Txid>,
     #[serde(rename = "spentby")]
     pub spent_by: Vec<Txid>,
-    #[serde(rename = "bip125-replaceable")]
-    pub bip125_replaceable: bool,
+    #[serde(rename = "bip125-replaceable", default)]
+    pub bip125_replaceable: Option<bool>,
     pub unbroadcast: bool,
 }
 
