@@ -81,7 +81,20 @@ fn test_deserialize_getmempoolentry() {
     let res: RpcResult<response::Success<_>> = res.try_into();
     let entry = res.expect("Expected to deserialize as ok success").result;
     assert_eq!(entry.fees.base, bitcoin::Amount::from_sat(6_160_000));
-    assert!(entry.bip125_replaceable);
+    assert_eq!(entry.bip125_replaceable, Some(true));
+}
+
+#[test]
+// Core 32 removes `bip125-replaceable` from the mempool RPCs unless the node
+// runs with `-deprecatedrpc=bip125`.
+fn test_deserialize_getmempoolentry_without_bip125() {
+    let json_str = include_str!("json/getmempoolentry-no-bip125.json");
+    let mut json_des = serde_json::Deserializer::from_str(json_str);
+    let res: Response<client::RawMempoolTxInfo> = serde_path_to_error::deserialize(&mut json_des)
+        .expect("Failed to deserialize mempool entry");
+    let res: RpcResult<response::Success<_>> = res.try_into();
+    let entry = res.expect("Expected to deserialize as ok success").result;
+    assert_eq!(entry.bip125_replaceable, None);
 }
 
 #[test]
