@@ -39,7 +39,7 @@ mod compact_target_hex {
     where
         S: Serializer,
     {
-        hex::serde::serialize(target.to_consensus().to_be_bytes(), serializer)
+        const_hex::serde::no_prefix::serialize(target.to_consensus().to_be_bytes(), serializer)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<bitcoin::CompactTarget, D::Error>
@@ -51,7 +51,7 @@ mod compact_target_hex {
     }
 }
 
-/// Like [`hex::serde`], for an optional value.
+/// Like [`hex::serde::no_prefix`], for an optional value.
 mod option_hex {
     use serde::{de::Error as _, Deserialize as _, Deserializer, Serialize as _, Serializer};
 
@@ -59,7 +59,7 @@ mod option_hex {
     where
         S: Serializer,
     {
-        value.as_ref().map(hex::encode).serialize(serializer)
+        value.as_ref().map(const_hex::encode).serialize(serializer)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
@@ -67,7 +67,7 @@ mod option_hex {
         D: Deserializer<'de>,
     {
         Option::<String>::deserialize(deserializer)?
-            .map(hex::decode)
+            .map(const_hex::decode)
             .transpose()
             .map_err(D::Error::custom)
     }
@@ -85,7 +85,10 @@ mod hex_values {
     where
         S: Serializer,
     {
-        serializer.collect_map(map.iter().map(|(key, value)| (key, hex::encode(value))))
+        serializer.collect_map(
+            map.iter()
+                .map(|(key, value)| (key, const_hex::encode(value))),
+        )
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<LinkedHashMap<String, Vec<u8>>, D::Error>
@@ -94,7 +97,7 @@ mod hex_values {
     {
         LinkedHashMap::<String, String>::deserialize(deserializer)?
             .into_iter()
-            .map(|(key, value)| hex::decode(value).map(|value| (key, value)))
+            .map(|(key, value)| const_hex::decode(value).map(|value| (key, value)))
             .collect::<Result<_, _>>()
             .map_err(D::Error::custom)
     }
@@ -272,7 +275,7 @@ pub struct TxOutSetInfo {
     pub n_txs: u64,
     #[serde(rename = "txouts")]
     pub n_txouts: u64,
-    #[serde(with = "hex::serde")]
+    #[serde(with = "const_hex::serde::no_prefix")]
     pub hash_serialized_3: [u8; 32],
 }
 
@@ -294,7 +297,7 @@ pub struct NetworkInfo {
 /// Output from `getrawtransaction` where `verbosity = 1`
 #[derive(Clone, Debug, Deserialize)]
 pub struct TxInfo {
-    #[serde(deserialize_with = "hex::serde::deserialize")]
+    #[serde(deserialize_with = "const_hex::serde::no_prefix::deserialize")]
     pub hex: Vec<u8>,
     pub txid: Txid,
     // TODO: add more fields
@@ -478,7 +481,7 @@ pub const MODE_PROPOSAL: &str = "proposal";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BlockTemplateTransaction {
-    #[serde(with = "hex::serde")]
+    #[serde(with = "const_hex::serde::no_prefix")]
     pub data: Vec<u8>,
     pub txid: Txid,
     // TODO: check that this is the wtxid
@@ -520,12 +523,12 @@ pub struct BlockTemplate {
     /// MUST be omitted if the server does not support long polling
     #[serde(rename = "longpollid")]
     pub long_poll_id: Option<String>,
-    #[serde(with = "hex::serde")]
+    #[serde(with = "const_hex::serde::no_prefix")]
     pub target: [u8; 32],
     pub mintime: u64,
     pub mutable: Vec<String>,
     #[serde(rename = "noncerange")]
-    #[serde(with = "hex::serde")]
+    #[serde(with = "const_hex::serde::no_prefix")]
     pub nonce_range: [u8; 8],
     #[serde(rename = "sigoplimit")]
     pub sigop_limit: u64,
@@ -569,7 +572,7 @@ pub struct BlockchainInfoV29 {
     #[serde(rename = "bits")]
     #[serde(with = "compact_target_hex")]
     pub compact_target: bitcoin::CompactTarget,
-    #[serde(with = "hex::serde")]
+    #[serde(with = "const_hex::serde::no_prefix")]
     pub target: [u8; 32],
 }
 

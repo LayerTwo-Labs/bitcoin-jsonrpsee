@@ -10,8 +10,8 @@ publish = false
 [dependencies]
 base64 = "0.23.0"
 bitcoin = { version = "0.32.2", features = ["serde"] }
+const-hex = { version = "1.19", features = ["serde"] }
 hashlink = { version = "0.12.1", features = ["serde_impl"] }
-hex = { version = "0.4.3", features = ["serde"] }
 http = "1.4.2"
 jsonrpsee = { version = "0.26.0", features = ["client-core", "macros"] }
 # Depended on directly rather than through the `jsonrpsee/http-client` feature,
@@ -23,7 +23,7 @@ thiserror = "2.0.19"
 tracing = { version = "0.1.44", optional = true }
 
 [dependencies.educe]
-version = "0.7.4"
+version = "0.8"
 default-features = false
 features = ["Clone", "Debug"]
 
