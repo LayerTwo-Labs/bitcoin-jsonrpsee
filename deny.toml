@@ -85,13 +85,9 @@ ignore = []
 # [possible values: any SPDX 3.11 short identifier (+ optional exception)].
 allow = [
     "Apache-2.0",
-    "BSD-3-Clause",
     "CC0-1.0",
-    "CDLA-Permissive-2.0",
-    "ISC",
     "MIT",
     "MITNFA",
-    "OpenSSL",
     "Unicode-3.0",
 ]
 # The confidence threshold for detecting a license from license text.
@@ -209,8 +205,6 @@ skip = [
 skip-tree = [
     #"ansi_term@0.11.0", # will be skipped along with _all_ of its direct and transitive dependencies
     #{ crate = "ansi_term@0.11.0", depth = 20 },
-    { crate = "thiserror@1" },
-    { crate = "windows-sys@0.52.0" },
 ]
 
 # This section is considered when running `cargo deny check sources`.

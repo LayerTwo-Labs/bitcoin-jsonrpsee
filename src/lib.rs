@@ -26,7 +26,7 @@ pub enum Error {
     #[error("bitcoin consensus encode error")]
     BitcoinConsensusEncode(#[from] bitcoin::consensus::encode::Error),
     #[error("hex error")]
-    Hex(#[from] hex::FromHexError),
+    Hex(#[from] const_hex::FromHexError),
     #[error("no next block for prev_main_hash = {prev_main_hash}")]
     NoNextBlock { prev_main_hash: bitcoin::BlockHash },
     #[error("io error")]
